@@ -8,51 +8,51 @@ rust: nightly
 os: linux
 
 env:
-    global:
-        - CRATE_NAME=cookiebot
+  global:
+    - CRATE_NAME=cookiebot
 
 jobs:
-    include:
-        - env: TARGET=x86_64-unknown-linux-gnu
+  include:
+    - env: TARGET=x86_64-unknown-linux-gnu
 
 before_install:
-    - set -e
-    - rustup self update
+  - set -e
+  - rustup self update
 
 install:
-    - sh ci/install.sh
-    - source ~/.cargo/env || true
+  - sh ci/install.sh
+  - source ~/.cargo/env || true
 
 script:
-    - bash ci/script.sh
+  - bash ci/script.sh
 
 after_script: set +e
 
 before_deploy:
-    - sh ci/before_deploy.sh
+  - sh ci/before_deploy.sh
 
 deploy:
-    token:
-        secure: IuvroqqTuJR78Svgja/geHqYPd1JmAtdArBL+QGzDBPQ3BwULQPg9WZc9sHwBD+F+6ZovP/1ABQqrgIacsyjUWupL949OL7AZ+SJV3Awy7L/LDkHUrLQZozCG5a3LUDGQKmINfRpYcd1WeJmgP7DySugxmm5c/T9dgQ0EM8pLtssdf5fb6/HM+TeETNSF28MEzfj62cT7LwCGFWNN/vkR/hVoTikipy/3JnAWkrj4XWP6vbfmVjYEazLK85bfw3qD2LBinDmV2HMDVfv++aYyjCmnlWs6nf6Rc+TYtRB2cDtCH/XsCNQwVLSE/ZDaEatWIv2EiqrHLJcs1PGYd0eG6Cb0cM9fMucF/Xm8rlZ2ouJArVQEp7ClR27x+OW8PhLdHMR6DXOsTGUMCMG9db9j2fCv6LK+iOyTcFlbJkJ1X5Zfwee6MCSH9dFhz82xZIH0hDtYpl4dNy1vE/6z+vQ9nJYOCzrjIVA3LhMEdaOHZufMUhxNPvBC23Od2zc5f/li9xHEy+jEDqlCTgaWTD/vmg3K1cfuwoJ+mUFVC+a7LdU4MUWTQeoI1htlelYIw/hBI46i9WUD6a7rUMyJXpmTLUHSS23qPlKcfZ8d4XeS1BZ0dahWKcIFqaFHU0YX/jkDGscUQ0rcALBCuTxipcRdk6gr4nE6ikKSTdmdwEgmxE=
-    file_glob: true
-    file: $CRATE_NAME-$TRAVIS_TAG-$TARGET.*
-    on:
-        tags: true
-        repo: Chronophylos/cookiebot
-    provider: releases
-    skip_cleanup: true
+  token:
+    secure: AmyXxkx8s05hkwh1XnJ64Sy4G7MzldYrvLcxONXOIBnqZMGl7u3SSTXnLNr+AT86FHJ18GYgX4ju9p3auxTAvZi8umVBWV4HEizyixEX5k+WtduT0vgEIdeg+j3BH/NrXngqeEUePWA9k0jJ5VoKCRl4g4OoWpyzLEO5kvtkIb005LHlWtZhxjkzplXbDCNlbM+/BnxcnmwSDbJuHw2sRHjhV0bimhGHZL8/4jWZ5FEqvexFjkR6vTHx0gYe+NoDAXTfemAgpKg2jImF96BjU4VhSOmQ38MmcMRKC5bQRE9w1AYCr9ehQuKV7rH6q48/hUCvJ86T73XRwRDri7uYnITeu8+6H4JjRKfh4kT4R6AhY7jDHghS4RpThxi2voQKZwwf7OcYRpZXMh8yVU/nIdBDyAxLdUiKz+6MhKoGecMWYSVpfBAZbaoUfycMpaM4oWyOuX770Y1kPnk7nt2aIiyY237ckPemegW8wl+1ZewwDuTvXTHFC5TiIDNq3hHJq+Ndr+LlS0Qndl/CrCsOWCt4dYfCiNpLX6Mo4MpsNCfN/tT1yTMAttqBNih8R9bR1gv5uxTGhvyh1cYypdkZwAKAoA+kXoh0FORVLBiDX5OdZvc0gV9oAZep5wcCNYH5rS3qw7kPt/+D9uvm8Mrj8TGX0PtfO5zhSkrjwLUYbrc=
+  file_glob: true
+  file: $CRATE_NAME-$TRAVIS_TAG-$TARGET.*
+  on:
+    tags: true
+    repo: Chronophylos/cookiebot
+  provider: releases
+  skip_cleanup: true
 
 cache: cargo
 before_cache:
-    # Travis can't cache files that are not readable by "others"
-    - chmod -R a+r $HOME/.cargo
+  # Travis can't cache files that are not readable by "others"
+  - chmod -R a+r $HOME/.cargo
 
 branches:
-    only:
-        # release tags
-        - /^v\d+\.\d+\.\d+.*$/
-        - master
+  only:
+    # release tags
+    - /^v\d+\.\d+\.\d+.*$/
+    - master
 
 notifications:
-    email:
-        on_success: never
+  email:
+    on_success: never
