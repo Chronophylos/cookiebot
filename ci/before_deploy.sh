@@ -4,7 +4,8 @@ set -ex
 
 main() {
     local src=$(pwd) \
-          stage=
+          stage= \
+          bin=cookiebot
 
     case $TRAVIS_OS_NAME in
         linux)
@@ -17,9 +18,9 @@ main() {
 
     test -f Cargo.lock || cargo generate-lockfile
 
-    cargo rustc --bin v-server --target $TARGET --release -- -C lto
+    cargo rustc --bin $bin --target $TARGET --release -- -C lto
 
-    cp target/$TARGET/release/cookiebot $stage/
+    cp target/$TARGET/release/$bin $stage/
 
     cd $stage
     tar czf $src/$CRATE_NAME-$TRAVIS_TAG-$TARGET.tar.gz *
