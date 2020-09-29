@@ -18,7 +18,7 @@ main() {
 
     test -f Cargo.lock || cargo generate-lockfile
 
-    cargo rustc --bin $bin --target $TARGET --release -- -C lto
+    cargo rustc --bin $bin --target $TARGET --release
 
     cp target/$TARGET/release/$bin $stage/
 
