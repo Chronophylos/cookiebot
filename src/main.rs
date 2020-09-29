@@ -354,7 +354,7 @@ impl Bot {
     }
 
     async fn communicate(&mut self, message: &str) -> Result<String> {
-        const MAX_RETRIES: u32 = 3;
+        const MAX_RETRIES: u64 = 3;
 
         for retry in 0..MAX_RETRIES {
             if retry > 0 {
@@ -376,7 +376,7 @@ impl Bot {
             {
                 Err(response) if response.to_string() == "Response timed out" => {
                     // back off after time out
-                    let sleep = Duration::from_millis(500 * 100u64.pow(retry));
+                    let sleep = Duration::from_secs(1 + retry.pow(2));
                     info!("Sleeping for {}", sleep.as_readable());
                     Timer::after(sleep).await;
                     continue;
