@@ -38,7 +38,7 @@ deploy:
   file: $CRATE_NAME-$TRAVIS_TAG-$TARGET.*
   on:
     tags: true
-    repo: Chronophylos/v
+    repo: Chronophylos/cookiebot
   provider: releases
   skip_cleanup: true
 
