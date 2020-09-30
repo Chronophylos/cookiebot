@@ -32,6 +32,7 @@ struct CooldownResponse {
     seconds_left: f32,
 }
 
+#[derive(Debug)]
 pub struct Bot {
     user_config: UserConfig,
     channel: String,
@@ -40,12 +41,12 @@ pub struct Bot {
 }
 
 impl Bot {
-    pub async fn new(user_config: &UserConfig, channel: String) -> Result<Self> {
-        let runner = connect(&user_config, &channel).await?;
+    pub async fn new(user_config: &UserConfig, channel: &str) -> Result<Self> {
+        let runner = connect(&user_config, channel).await?;
 
         Ok(Self {
             user_config: user_config.clone(),
-            channel,
+            channel: channel.to_owned(),
             runner,
             send_byte: false,
         })
@@ -63,13 +64,13 @@ impl Bot {
                     info!("Got {} {}s", amount, cookie);
                 }
 
-                //if amount > 7 {
-                //    info!("Trying to buy cooldown reduction for 7 cookies");
-                //    if self.buy_cdr().await? {
-                //        info!("Cooldown was reset");
-                //        continue;
-                //    }
-                //}
+                if amount > 7 {
+                    info!("Trying to buy cooldown reduction for 7 cookies");
+                    if self.buy_cdr().await? {
+                        info!("Cooldown was reset");
+                        continue;
+                    }
+                }
 
                 info!("Sleeping for 2 hours");
                 smol::Timer::after(Duration::from_secs(2 * 60 * 60)).await;
@@ -161,9 +162,8 @@ impl Bot {
 
     //gen_capture_fun!(CLAIM_GOOD, CLAIM_BAD, claim_cookies, "!cookie");
 
-    #[cfg(shop)]
     async fn buy_cdr(&mut self) -> Result<bool> {
-        let msg = self.communicate("!shop buy cooldownreset").await?;
+        let msg = self.communicate("!shop buy cdr").await?;
 
         if BUY_CDR_GOOD.is_match(&msg) {
             Ok(true)

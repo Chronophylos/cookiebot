@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
         .capabilities(&[Capability::Tags])
         .build()?;
 
-    ThePositiveBotBot::new(&user_config, CONFIG.channel.clone())
+    ThePositiveBotBot::new(&user_config, &CONFIG.channel)
         .await?
         .main_loop()
         .await
