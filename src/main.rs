@@ -474,7 +474,7 @@ async fn connect(user_config: &UserConfig, channel: &str) -> anyhow::Result<Asyn
     // create a connector using ``smol``, this connects to Twitch.
     // you can provide a different address with `custom`
     // this can fail if DNS resolution cannot happen
-    let connector = connector::SmolConnectorTls::twitch();
+    let connector = connector::SmolConnectorTls::twitch()?;
 
     info!("Connecting to twitch");
     // create a new runner. this is a provided async 'main loop'
@@ -519,45 +519,4 @@ async fn main() -> Result<()> {
         .await?
         .main_loop()
         .await
-}
-
-#[cfg(test)]
-mod bug {
-    use super::*;
-    use twitchchat::{connector, twitch::Capability, AsyncRunner, UserConfig};
-
-    #[test]
-    fn bug() {
-        env_logger::init();
-
-        smol::block_on(async move {
-            let connector = connector::SmolConnectorTls::twitch();
-            let user_config = UserConfig::builder()
-                .name(&CONFIG.username)
-                .token(&CONFIG.token)
-                .capabilities(&[Capability::Tags])
-                .build()
-                .unwrap();
-            let runner = AsyncRunner::connect(connector, &user_config).await.unwrap();
-
-            assert_eq!(runner.identity.username(), &CONFIG.username)
-        })
-    }
-
-    #[test]
-    fn working() {
-        env_logger::init();
-
-        smol::block_on(async move {
-            let connector = connector::SmolConnectorTls::twitch();
-            let user_config = UserConfig::builder()
-                .name(&CONFIG.username)
-                .token(&CONFIG.token)
-                .build()
-                .unwrap();
-            let runner = AsyncRunner::connect(connector, &user_config).await.unwrap();
-
-            assert_eq!(runner.identity.username(), &CONFIG.username)
-        })
-    }
 }
