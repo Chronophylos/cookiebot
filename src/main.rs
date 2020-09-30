@@ -450,13 +450,13 @@ impl Bot {
 
                 // you signaled a quit
                 Status::Quit => {
-                    info!("we signaled we wanted to quit");
+                    warn!("Got quit from twitchchat");
                     bail!("Quitting");
                 }
 
                 // the connection closed normally
                 Status::Eof => {
-                    warn!("we got a 'normal' eof");
+                    warn!("Got a 'normal' eof");
                     self.reconnect().await?;
                 }
             }
@@ -464,6 +464,8 @@ impl Bot {
     }
 
     async fn reconnect(&mut self) -> Result<()> {
+        info!("Reconnecting");
+
         self.runner = connect(&self.user_config, &self.channel).await?;
 
         Ok(())
@@ -481,15 +483,10 @@ async fn connect(user_config: &UserConfig, channel: &str) -> anyhow::Result<Asyn
     // this method will block until you're ready
     let mut runner = AsyncRunner::connect(connector, user_config).await?;
 
-    // and the identity Twitch gave you
     info!("Connected with Identity: {:#?}", runner.identity);
 
-    // the runner itself has 'blocking' join/part to ensure you join/leave a channel.
-    // these two methods return whether the connection was closed early.
-    // we'll ignore it for this demo
-    // TODO: dont ignore it
     info!("Attempting to join '{}'", channel);
-    let _ = runner.join(channel).await?;
+    runner.join(channel).await?;
     info!("Joined '{}'!", channel);
 
     Ok(runner)
