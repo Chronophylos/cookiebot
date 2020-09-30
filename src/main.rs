@@ -6,10 +6,10 @@ mod toggle;
 
 use anyhow::{anyhow, bail, Context, Result};
 use config::Config;
-//use either::*;
 use lazy_static::lazy_static;
 use log::{debug, info, warn};
 use regex::{Captures, Regex};
+use serde::Deserialize;
 use smol::{future::FutureExt, Timer};
 use std::time::Duration;
 use timestamp::Timestamp;
@@ -198,6 +198,20 @@ mod test_regex {
     }
 }
 
+// {
+//     "can_claim": false,
+//     "interval_formatted": "2 hours",
+//     "interval_unformatted": 7200,
+//     "seconds_left": 7037.756,
+//     "time_left_formatted": "1 hr, 57 mins, and 18 secs",
+//     "time_left_unformatted": "01:57:17"
+// }
+#[derive(Debug, Copy, Clone, Deserialize)]
+struct CooldownResponse {
+    can_claim: bool,
+    seconds_left: f32,
+}
+
 struct Bot {
     user_config: UserConfig,
     channel: String,
@@ -229,6 +243,7 @@ impl Bot {
                     info!("Got {} {}s", amount, cookie);
                 }
 
+                #[cfg(shop)]
                 if amount > 7 {
                     info!("Trying to buy cooldown reduction for 7 cookies");
                     if self.buy_cdr().await? {
@@ -263,17 +278,29 @@ impl Bot {
     }
 
     async fn get_cookie_cd(&mut self) -> Result<Option<Duration>> {
-        let msg = self.communicate("!cookies").await?;
+        let client = reqwest::Client::new();
+        let response: CooldownResponse = client
+            .get(&format!(
+                "https://api.roaringiron.com/cooldown/{}",
+                self.user_config.name
+            ))
+            .header(
+                "User-Agent",
+                concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION")),
+            )
+            .header("X-Github-Repo", env!("CARGO_PKG_REPOSITORY"))
+            .send()
+            .await?
+            .json()
+            .await?;
 
-        if CD_CHECK_GOOD.is_match(&msg) {
-            return Ok(None);
+        debug!("Got response from api.roaringiron.com: {:?}", response);
+
+        if response.can_claim {
+            Ok(None)
+        } else {
+            Ok(Some(Duration::from_secs_f32(response.seconds_left)))
         }
-
-        if let Some(captures) = CD_CHECK_BAD.captures(&msg) {
-            return Ok(Some(duration_from_captures(captures)?));
-        }
-
-        Err(anyhow!("no regex matched"))
     }
 
     async fn claim_cookies(&mut self) -> Result<Option<(String, i32, u64)>> {
@@ -315,6 +342,7 @@ impl Bot {
 
     //gen_capture_fun!(CLAIM_GOOD, CLAIM_BAD, claim_cookies, "!cookie");
 
+    #[cfg(shop)]
     async fn buy_cdr(&mut self) -> Result<bool> {
         let msg = self.communicate("!shop buy cooldownreset").await?;
 
@@ -448,40 +476,23 @@ async fn connect(user_config: &UserConfig, channel: &str) -> anyhow::Result<Asyn
     // this can fail if DNS resolution cannot happen
     let connector = connector::SmolConnectorTls::twitch();
 
-    info!("we're connecting!");
+    info!("Connecting to twitch");
     // create a new runner. this is a provided async 'main loop'
     // this method will block until you're ready
     let mut runner = AsyncRunner::connect(connector, user_config).await?;
-    info!("..and we're connected");
 
     // and the identity Twitch gave you
-    info!("our identity: {:#?}", runner.identity);
+    info!("Connected with Identity: {:#?}", runner.identity);
 
     // the runner itself has 'blocking' join/part to ensure you join/leave a channel.
     // these two methods return whether the connection was closed early.
     // we'll ignore it for this demo
     // TODO: dont ignore it
-    info!("attempting to join '{}'", channel);
+    info!("Attempting to join '{}'", channel);
     let _ = runner.join(channel).await?;
-    info!("joined '{}'!", channel);
+    info!("Joined '{}'!", channel);
 
     Ok(runner)
-}
-
-fn duration_from_captures(captures: Captures) -> Result<Duration> {
-    let secs = vec![("h", 3600), ("m", 60), ("s", 1)]
-        .into_iter()
-        .filter_map(|(name, multiplier)| {
-            captures.name(name).map(|m| {
-                Ok(m.as_str()
-                    .parse::<u64>()
-                    .context(format!("could not parse {}", name))?
-                    * multiplier)
-            })
-        })
-        .sum::<Result<u64>>()?;
-
-    Ok(Duration::from_secs(secs))
 }
 
 fn total_from_captures(captures: Captures) -> Result<u64> {
@@ -494,21 +505,20 @@ fn total_from_captures(captures: Captures) -> Result<u64> {
     Ok(total)
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     env_logger::init();
 
-    smol::block_on(async {
-        let user_config = UserConfig::builder()
-            .name(&CONFIG.username)
-            .token(&CONFIG.token)
-            .capabilities(&[Capability::Tags])
-            .build()?;
+    let user_config = UserConfig::builder()
+        .name(&CONFIG.username)
+        .token(&CONFIG.token)
+        .capabilities(&[Capability::Tags])
+        .build()?;
 
-        Bot::new(user_config, CONFIG.channel.clone())
-            .await?
-            .main_loop()
-            .await
-    })
+    Bot::new(user_config, CONFIG.channel.clone())
+        .await?
+        .main_loop()
+        .await
 }
 
 #[cfg(test)]
