@@ -243,14 +243,13 @@ impl Bot {
                     info!("Got {} {}s", amount, cookie);
                 }
 
-                #[cfg(shop)]
-                if amount > 7 {
-                    info!("Trying to buy cooldown reduction for 7 cookies");
-                    if self.buy_cdr().await? {
-                        info!("Cooldown was reset");
-                        continue;
-                    }
-                }
+                //if amount > 7 {
+                //    info!("Trying to buy cooldown reduction for 7 cookies");
+                //    if self.buy_cdr().await? {
+                //        info!("Cooldown was reset");
+                //        continue;
+                //    }
+                //}
 
                 info!("Sleeping for 2 hours");
                 smol::Timer::after(Duration::from_secs(2 * 60 * 60)).await;

@@ -8,7 +8,6 @@ repository = "Chronphylos/cookiebot"
 
 [features]
 default = []
-shop = []
 
 [dependencies]
 lazy_static = "1.4.0"
