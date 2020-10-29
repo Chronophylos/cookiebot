@@ -163,7 +163,7 @@ impl Bot {
     //gen_capture_fun!(CLAIM_GOOD, CLAIM_BAD, claim_cookies, "!cookie");
 
     async fn buy_cdr(&mut self) -> Result<bool> {
-        let msg = self.communicate("!shop buy cdr").await?;
+        let msg = self.communicate("!cdr").await?;
 
         if BUY_CDR_GOOD.is_match(&msg) {
             Ok(true)
