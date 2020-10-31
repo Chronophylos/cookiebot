@@ -59,8 +59,7 @@ fn update() -> Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     env_logger::init();
     update()?;
 
@@ -70,8 +69,10 @@ async fn main() -> Result<()> {
         .capabilities(&[Capability::Tags])
         .build()?;
 
-    ThePositiveBotBot::new(&user_config, &CONFIG.channel)
-        .await?
-        .main_loop()
-        .await
+    smol::block_on(async {
+        ThePositiveBotBot::new(&user_config, &CONFIG.channel)
+            .await?
+            .main_loop()
+            .await
+    })
 }

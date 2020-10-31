@@ -73,7 +73,7 @@ impl Bot {
                 }
 
                 info!("Sleeping for 2 hours");
-                smol::Timer::after(Duration::from_secs(2 * 60 * 60)).await;
+                Timer::after(Duration::from_secs(2 * 60 * 60)).await;
             } else {
                 info!("Could not claim cookies: Cooldown active");
 
@@ -84,21 +84,21 @@ impl Bot {
 
     async fn wait_for_cooldown(&mut self) -> Result<()> {
         info!("Checking cookie cooldown");
-        match self.get_cookie_cd().await? {
+        match self.get_cookie_cd()? {
             None => {
                 info!("Cooldown not active");
             }
             Some(duration) => {
                 info!("Current cooldown. Waiting for {}", duration.as_readable());
-                smol::Timer::after(duration).await;
+                Timer::after(duration).await;
             }
         }
 
         Ok(())
     }
 
-    async fn get_cookie_cd(&mut self) -> Result<Option<Duration>> {
-        let client = reqwest::Client::new();
+    fn get_cookie_cd(&mut self) -> Result<Option<Duration>> {
+        let client = reqwest::blocking::Client::new();
         let response: CooldownResponse = client
             .get(&format!(
                 "https://api.roaringiron.com/cooldown/{}",
@@ -109,10 +109,8 @@ impl Bot {
                 concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION")),
             )
             .header("X-Github-Repo", env!("CARGO_PKG_REPOSITORY"))
-            .send()
-            .await?
-            .json()
-            .await?;
+            .send()?
+            .json()?;
 
         debug!("Got response from api.roaringiron.com: {:?}", response);
 
