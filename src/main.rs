@@ -46,7 +46,20 @@ fn update() -> Result<()> {
 
     match status {
         UpToDate(_) => info!("Version is up to date"),
-        Updated(version) => info!("Updated to {}", version),
+        Updated(version) => {
+            info!("Updated to {}", version);
+            use std::process::{exit, Command};
+
+            let code = Command::new(std::env::args().next().expect("executable path"))
+                .spawn()?
+                .wait()?;
+
+            if code.success() == false {
+                exit(code.code().unwrap_or(1));
+            } else {
+                exit(0);
+            }
+        }
     }
 
     Ok(())
