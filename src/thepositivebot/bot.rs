@@ -98,7 +98,7 @@ impl Bot {
                 info!("Cooldown not active");
             }
             Some(duration) => {
-                info!("Current cooldown. Waiting for {}", duration.as_readable());
+                info!("Cooldown active. Waiting for {}", duration.as_readable());
                 Timer::after(duration).await;
             }
         }
