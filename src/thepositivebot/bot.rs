@@ -241,7 +241,7 @@ impl Bot {
             {
                 Err(response) if response.to_string() == "Response timed out" => {
                     // exponential back off after time out
-                    let sleep = Duration::from_secs(5 + 2u64.pow(retry));
+                    let sleep = Duration::from_secs(2u64.pow(retry + 2));
                     info!("Sleeping for {}", sleep.as_readable());
                     Timer::after(sleep).await;
                     continue;
