@@ -72,9 +72,14 @@ impl Bot {
                     }
                 }
 
-                //if total > 5000 {
-                //    self.upgrade_prestige().await?;
-                //}
+                if total >= 5000 {
+                    if self.upgrade_prestige().await? {
+                        warn!(
+                            "Could not upgrade prestige but cookie count is over 5000 ({})",
+                            total
+                        );
+                    }
+                }
 
                 info!("Sleeping for 2 hours");
                 Timer::after(Duration::from_secs(2 * 60 * 60)).await;
@@ -165,7 +170,13 @@ impl Bot {
     async fn upgrade_prestige(&mut self) -> Result<bool> {
         let msg = self.communicate("!prestige").await?;
 
-        todo!()
+        if PRESTIGE_GOOD.is_match(&msg) {
+            Ok(true)
+        } else if PRESTIGE_BAD.is_match(&msg) {
+            Ok(false)
+        } else {
+            Err(anyhow!("no regex matched"))
+        }
     }
 
     async fn buy_cdr(&mut self) -> Result<bool> {

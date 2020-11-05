@@ -6,6 +6,8 @@ lazy_static! {
     pub static ref CLAIM_BAD: Regex = Regex::new(r"\[Cookies\] \[(?P<rank>(P\d: )?\w+)\] (?P<username>\w+) you have already claimed a cookie and have (?P<total>\d+) of them!").unwrap();
     pub static ref BUY_CDR_GOOD: Regex = Regex::new(r"\[Shop\] (?P<username>\w+), your cooldown has been reset!").unwrap();
     pub static ref BUY_CDR_BAD: Regex = Regex::new(r"\[Shop\] (?P<username>\w+), you can purchase your next cooldown reset in (((?P<h>\d) hrs?, )?(?P<m>\d+) mins?, )?(?P<s>\d+) secs?!").unwrap();
+    pub static ref PRESTIGE_GOOD: Regex = Regex::new(r"\[Cookies\] (?P<username>\w+) you reset your rank and are now \[(?P<rank>(P\d: )?\w+)\]!").unwrap();
+    pub static ref PRESTIGE_BAD: Regex = Regex::new(r"\[Cookies\] (?P<username>\w+) you are not ranked high enough to Prestige yet! FeelsBadMan You need Leader rank OR 5000\+ cookies!").unwrap();
     pub static ref GENERIC_ANSWER: Regex = Regex::new(r"\[\w+\] (\[\w+\])? (?P<username>\w+)").unwrap();
 }
 
@@ -149,6 +151,33 @@ mod test_regex {
         assert_eq!(captures.name("h").unwrap().as_str(), "2");
         assert_eq!(captures.name("m").unwrap().as_str(), "58");
         assert_eq!(captures.name("s").unwrap().as_str(), "54");
+    }
+
+    #[test]
+    fn prestige_good() {
+        let captures = PRESTIGE_GOOD
+            .captures("[Cookies] chronophylos you reset your rank and are now [P1: default]! PartyHat PogChamp The next rank is Bronze (50 🍪 )! Have fun climbing back up :)")
+            .expect("regex should match");
+
+        assert_eq!(
+            captures.name("username").unwrap().as_str(),
+            "chronophylos",
+            "wrong username"
+        );
+        assert_eq!(captures.name("rank").unwrap().as_str(), "P1: default");
+    }
+
+    #[test]
+    fn prestige_bad() {
+        let captures = PRESTIGE_GOOD
+            .captures("[Cookies] chronophylos you are not ranked high enough to Prestige yet! FeelsBadMan You need Leader rank OR 5000+ cookies!")
+            .expect("regex should match");
+
+        assert_eq!(
+            captures.name("username").unwrap().as_str(),
+            "chronophylos",
+            "wrong username"
+        );
     }
 }
 
