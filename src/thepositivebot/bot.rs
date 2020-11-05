@@ -93,13 +93,21 @@ impl Bot {
 
     async fn wait_for_cooldown(&mut self) -> Result<()> {
         info!("Checking cookie cooldown");
+
         match self.get_cookie_cd()? {
             None => {
                 info!("Cooldown not active");
             }
             Some(duration) => {
-                info!("Cooldown active. Waiting for {}", duration.as_readable());
+                info!("Cooldown active");
+                debug!("Terminating twitch connection");
+                self.runner.quit_handle().notify().await;
+
+                info!("Waiting for {}", duration.as_readable());
                 Timer::after(duration).await;
+
+                debug!("Restoring twitch connection");
+                self.reconnect().await?;
             }
         }
 
@@ -271,7 +279,7 @@ impl Bot {
 
                 // you signaled a quit
                 Status::Quit => {
-                    warn!("Got quit from twitchchat");
+                    warn!("Got unexpected quit from twitchchat");
                     bail!("Quitting");
                 }
 
