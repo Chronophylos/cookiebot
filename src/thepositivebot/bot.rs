@@ -57,6 +57,7 @@ impl Bot {
 
         loop {
             info!("Claiming cookies");
+
             if let Some((cookie, amount, total)) = self.claim_cookies().await? {
                 if amount == 0 {
                     info!("No cookies found");
@@ -81,13 +82,12 @@ impl Bot {
                     }
                 }
 
-                info!("Sleeping for 2 hours");
-                Timer::after(Duration::from_secs(2 * 60 * 60)).await;
+                info!("Waiting for cooldown");
             } else {
                 info!("Could not claim cookies: Cooldown active");
-
-                self.wait_for_cooldown().await?;
             }
+
+            self.wait_for_cooldown().await?;
         }
     }
 
