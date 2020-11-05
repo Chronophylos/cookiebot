@@ -91,6 +91,24 @@ mod test_regex {
     }
 
     #[test]
+    fn claim_good5() {
+        let captures = CLAIM_GOOD.captures(
+            "[Cookies] [P1: default] chronophylos -> Raisin cookie! (-6) DansGame | 79 total! | 2 hour cooldown... 🍪"
+            )
+            .expect("regex should match");
+
+        assert_eq!(captures.name("rank").unwrap().as_str(), "P1: default");
+        assert_eq!(
+            captures.name("username").unwrap().as_str(),
+            "chronophylos",
+            "wrong username"
+        );
+        assert_eq!(captures.name("cookie").unwrap().as_str(), "Raisin cookie");
+        assert_eq!(captures.name("amount").unwrap().as_str(), "-6");
+        assert_eq!(captures.name("total").unwrap().as_str(), "79");
+    }
+
+    #[test]
     fn claim_bad1() {
         let captures = CLAIM_BAD.captures(
             "[Cookies] [default] chronophylos you have already claimed a cookie and have 31 of them! 🍪 Please wait in 2 hour intervals!"
