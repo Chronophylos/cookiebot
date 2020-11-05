@@ -2,10 +2,10 @@ use super::constants::*;
 use crate::{twitch::connect, Timestamp, Toggle};
 use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, info, trace, warn};
-use regex::Captures;
+use regex::{Captures, Regex};
 use serde::Deserialize;
 use smol::{future::FutureExt, Timer};
-use std::time::Duration;
+use std::{ops::Deref, time::Duration};
 use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
 
 pub fn total_from_captures(captures: Captures) -> Result<u64> {
@@ -74,7 +74,7 @@ impl Bot {
                 }
 
                 if total >= 5000 {
-                    if self.upgrade_prestige().await? {
+                    if self.prestige().await? {
                         warn!(
                             "Could not upgrade prestige but cookie count is over 5000 ({})",
                             total
@@ -131,64 +131,48 @@ impl Bot {
     }
 
     async fn claim_cookies(&mut self) -> Result<Option<(String, i32, u64)>> {
-        let msg = self.communicate("!cookie").await?;
+        self.request_captures(
+            "!cookie",
+            &CLAIM_GOOD,
+            |captures| {
+                let cookie = captures
+                    .name("cookie")
+                    .map(|m| m.as_str())
+                    .context("could not get cookie name")?
+                    .to_string();
 
-        if let Some(captures) = CLAIM_GOOD.captures(&msg) {
-            let cookie = captures
-                .name("cookie")
-                .map(|m| m.as_str())
-                .context("could not get cookie name")?
-                .to_string();
-
-            let amount = captures
-                .name("amount")
-                .map(|m| m.as_str())
-                .map(|s| {
-                    s.trim_start_matches('±').parse::<i32>().map(|n| {
-                        if s.starts_with('-') {
-                            -n
-                        } else {
-                            n
-                        }
+                let amount = captures
+                    .name("amount")
+                    .map(|m| m.as_str())
+                    .map(|s| {
+                        s.trim_start_matches('±').parse::<i32>().map(|n| {
+                            if s.starts_with('-') {
+                                -n
+                            } else {
+                                n
+                            }
+                        })
                     })
-                })
-                .context("could not get amount")?
-                .context("could not parse amount")?;
+                    .context("could not get amount")?
+                    .context("could not parse amount")?;
 
-            let total = total_from_captures(captures)?;
+                let total = total_from_captures(captures)?;
 
-            return Ok(Some((cookie, amount, total)));
-        }
-
-        if CLAIM_BAD.is_match(&msg) {
-            return Ok(None);
-        }
-
-        Err(anyhow!("no regex matched"))
+                Ok(Some((cookie, amount, total)))
+            },
+            &CLAIM_BAD,
+            |_| Ok(None),
+        )
+        .await
     }
 
-    async fn upgrade_prestige(&mut self) -> Result<bool> {
-        let msg = self.communicate("!prestige").await?;
-
-        if PRESTIGE_GOOD.is_match(&msg) {
-            Ok(true)
-        } else if PRESTIGE_BAD.is_match(&msg) {
-            Ok(false)
-        } else {
-            Err(anyhow!("no regex matched"))
-        }
+    async fn prestige(&mut self) -> Result<bool> {
+        self.request("!prestige", &PRESTIGE_GOOD, &PRESTIGE_BAD)
+            .await
     }
 
     async fn buy_cdr(&mut self) -> Result<bool> {
-        let msg = self.communicate("!cdr").await?;
-
-        if BUY_CDR_GOOD.is_match(&msg) {
-            Ok(true)
-        } else if BUY_CDR_BAD.is_match(&msg) {
-            Ok(false)
-        } else {
-            Err(anyhow!("no regex matched"))
-        }
+        self.request("!cdr", &BUY_CDR_GOOD, &BUY_CDR_BAD).await
     }
 
     async fn wait_for_answer(&mut self) -> Result<String> {
@@ -306,5 +290,50 @@ impl Bot {
         self.runner = connect(&self.user_config, &self.channel).await?;
 
         Ok(())
+    }
+
+    async fn request<ReGood, ReBad>(
+        &mut self,
+        message: &str,
+        re_good: &ReGood,
+        re_bad: &ReBad,
+    ) -> Result<bool>
+    where
+        ReGood: Deref<Target = Regex>,
+        ReBad: Deref<Target = Regex>,
+    {
+        let response = self.communicate(message).await?;
+
+        if re_good.is_match(&response) {
+            Ok(true)
+        } else if re_bad.is_match(&response) {
+            Ok(false)
+        } else {
+            Err(anyhow!("no regex matched"))
+        }
+    }
+
+    async fn request_captures<ReGood, FunGood, ReBad, FunBad, Res>(
+        &mut self,
+        message: &str,
+        re_good: &ReGood,
+        f_good: FunGood,
+        re_bad: &ReBad,
+        f_bad: FunBad,
+    ) -> Result<Res>
+    where
+        FunGood: FnOnce(Captures) -> Result<Res>,
+        FunBad: FnOnce(Captures) -> Result<Res>,
+        ReGood: Deref<Target = Regex>,
+        ReBad: Deref<Target = Regex>,
+    {
+        let response = self.communicate(message).await?;
+        if let Some(captures) = re_good.captures(&response) {
+            f_good(captures)
+        } else if let Some(captures) = re_bad.captures(&response) {
+            f_bad(captures)
+        } else {
+            Err(anyhow!("no regex matched"))
+        }
     }
 }
