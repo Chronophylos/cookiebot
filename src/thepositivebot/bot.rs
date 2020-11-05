@@ -57,7 +57,7 @@ impl Bot {
 
         loop {
             info!("Claiming cookies");
-            if let Some((cookie, amount, _total)) = self.claim_cookies().await? {
+            if let Some((cookie, amount, total)) = self.claim_cookies().await? {
                 if amount == 0 {
                     info!("No cookies found");
                 } else {
@@ -71,6 +71,10 @@ impl Bot {
                         continue;
                     }
                 }
+
+                //if total > 5000 {
+                //    self.upgrade_prestige().await?;
+                //}
 
                 info!("Sleeping for 2 hours");
                 Timer::after(Duration::from_secs(2 * 60 * 60)).await;
@@ -158,7 +162,11 @@ impl Bot {
         Err(anyhow!("no regex matched"))
     }
 
-    //gen_capture_fun!(CLAIM_GOOD, CLAIM_BAD, claim_cookies, "!cookie");
+    async fn upgrade_prestige(&mut self) -> Result<bool> {
+        let msg = self.communicate("!prestige").await?;
+
+        todo!()
+    }
 
     async fn buy_cdr(&mut self) -> Result<bool> {
         let msg = self.communicate("!cdr").await?;

@@ -2,10 +2,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 lazy_static! {
-    pub static ref CLAIM_GOOD: Regex = Regex::new(r"\[Cookies\] \[(?P<level>\w+)\] (?P<username>\w+) -> (?P<cookie>[^!]+)!+ \((?P<amount>[+-±]\d+)\) \w+ \| (?P<total>\d+) total!").unwrap();
-    pub static ref CLAIM_BAD: Regex = Regex::new(r"\[Cookies\] \[(?P<level>\w+)\] (?P<username>\w+) you have already claimed a cookie and have (?P<total>\d+) of them!").unwrap();
-    pub static ref CD_CHECK_GOOD: Regex = Regex::new(r"\[Cookies\] \[(?P<level>\w+)\] (?P<username>\w+), you have (?P<total>\d+) cookies! 🍪 You can also claim your next cookie now by doing !cookie!").unwrap();
-    pub static ref CD_CHECK_BAD: Regex = Regex::new(r"\[Cookies\] \[(?P<level>\w+)\] (?P<username>\w+), you have (?P<total>\d+) cookies! 🍪 (((?P<h>\d) hrs?, )?(?P<m>\d+) mins?, and )?(?P<s>\d+) secs? left until you can claim your next cookie!").unwrap();
+    pub static ref CLAIM_GOOD: Regex = Regex::new(r"\[Cookies\] \[(?P<rank>(P\d: )?\w+)\] (?P<username>\w+) -> (?P<cookie>[^!]+)!+ \((?P<amount>[+-±]\d+)\) \w+ \| (?P<total>\d+) total!").unwrap();
+    pub static ref CLAIM_BAD: Regex = Regex::new(r"\[Cookies\] \[(?P<rank>(P\d: )?\w+)\] (?P<username>\w+) you have already claimed a cookie and have (?P<total>\d+) of them!").unwrap();
     pub static ref BUY_CDR_GOOD: Regex = Regex::new(r"\[Shop\] (?P<username>\w+), your cooldown has been reset!").unwrap();
     pub static ref BUY_CDR_BAD: Regex = Regex::new(r"\[Shop\] (?P<username>\w+), you can purchase your next cooldown reset in (((?P<h>\d) hrs?, )?(?P<m>\d+) mins?, )?(?P<s>\d+) secs?!").unwrap();
     pub static ref GENERIC_ANSWER: Regex = Regex::new(r"\[\w+\] (\[\w+\])? (?P<username>\w+)").unwrap();
@@ -22,7 +20,7 @@ mod test_regex {
             )
             .expect("regex should match");
 
-        assert_eq!(captures.name("level").unwrap().as_str(), "default");
+        assert_eq!(captures.name("rank").unwrap().as_str(), "default");
         assert_eq!(
             captures.name("username").unwrap().as_str(),
             "chronophylos",
@@ -40,7 +38,7 @@ mod test_regex {
             )
             .expect("regex should match");
 
-        assert_eq!(captures.name("level").unwrap().as_str(), "Gold");
+        assert_eq!(captures.name("rank").unwrap().as_str(), "Gold");
         assert_eq!(
             captures.name("username").unwrap().as_str(),
             "fewo11",
@@ -61,7 +59,7 @@ mod test_regex {
             )
             .expect("regex should match");
 
-        assert_eq!(captures.name("level").unwrap().as_str(), "Silver");
+        assert_eq!(captures.name("rank").unwrap().as_str(), "Silver");
         assert_eq!(
             captures.name("username").unwrap().as_str(),
             "efdev",
@@ -73,13 +71,31 @@ mod test_regex {
     }
 
     #[test]
-    fn claim_bad() {
+    fn claim_good4() {
+        let captures = CLAIM_GOOD.captures(
+            "[Cookies] [P1: default] chronophylos -> Sugar cookie! (+14) PJSugar | 65 total! | 2 hour cooldown... 🍪"
+            )
+            .expect("regex should match");
+
+        assert_eq!(captures.name("rank").unwrap().as_str(), "P1: default");
+        assert_eq!(
+            captures.name("username").unwrap().as_str(),
+            "chronophylos",
+            "wrong username"
+        );
+        assert_eq!(captures.name("cookie").unwrap().as_str(), "Sugar cookie");
+        assert_eq!(captures.name("amount").unwrap().as_str(), "+14");
+        assert_eq!(captures.name("total").unwrap().as_str(), "65");
+    }
+
+    #[test]
+    fn claim_bad1() {
         let captures = CLAIM_BAD.captures(
             "[Cookies] [default] chronophylos you have already claimed a cookie and have 31 of them! 🍪 Please wait in 2 hour intervals!"
             )
             .expect("regex should match");
 
-        assert_eq!(captures.name("level").unwrap().as_str(), "default");
+        assert_eq!(captures.name("rank").unwrap().as_str(), "default");
         assert_eq!(
             captures.name("username").unwrap().as_str(),
             "chronophylos",
@@ -89,41 +105,19 @@ mod test_regex {
     }
 
     #[test]
-    fn cd_check_bad1() {
-        let captures = CD_CHECK_BAD.captures(
-            "[Cookies] [default] chronophylos, you have 31 cookies! 🍪 1 hr, 59 mins, and 33 secs left until you can claim your next cookie!"
+    fn claim_bad2() {
+        let captures = CLAIM_BAD.captures(
+            "[Cookies] [P1: default] chronophylos you have already claimed a cookie and have 65 of them! 🍪 Please wait in 2 hour intervals!"
             )
             .expect("regex should match");
 
-        assert_eq!(captures.name("level").unwrap().as_str(), "default");
+        assert_eq!(captures.name("rank").unwrap().as_str(), "P1: default");
         assert_eq!(
             captures.name("username").unwrap().as_str(),
             "chronophylos",
             "wrong username"
         );
-        assert_eq!(captures.name("total").unwrap().as_str(), "31");
-        assert_eq!(captures.name("h").unwrap().as_str(), "1");
-        assert_eq!(captures.name("m").unwrap().as_str(), "59");
-        assert_eq!(captures.name("s").unwrap().as_str(), "33");
-    }
-
-    #[test]
-    fn cd_check_bad2() {
-        let captures = CD_CHECK_BAD.captures(
-            "[Cookies] [Gold] fewo11, you have 33 cookies! 🍪 34 mins, and 29 secs left until you can claim your next cookie!"
-            )
-            .expect("regex should match");
-
-        assert_eq!(captures.name("level").unwrap().as_str(), "Gold");
-        assert_eq!(
-            captures.name("username").unwrap().as_str(),
-            "fewo11",
-            "wrong username"
-        );
-        assert_eq!(captures.name("total").unwrap().as_str(), "33");
-        assert!(captures.name("h").is_none());
-        assert_eq!(captures.name("m").unwrap().as_str(), "34");
-        assert_eq!(captures.name("s").unwrap().as_str(), "29");
+        assert_eq!(captures.name("total").unwrap().as_str(), "65");
     }
 
     #[test]
