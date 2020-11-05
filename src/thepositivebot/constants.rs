@@ -169,7 +169,7 @@ mod test_regex {
 
     #[test]
     fn prestige_bad() {
-        let captures = PRESTIGE_GOOD
+        let captures = PRESTIGE_BAD
             .captures("[Cookies] chronophylos you are not ranked high enough to Prestige yet! FeelsBadMan You need Leader rank OR 5000+ cookies!")
             .expect("regex should match");
 
