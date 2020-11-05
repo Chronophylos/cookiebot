@@ -1,0 +1,56 @@
+# Based on the "trust" template v0.1.2
+# https://github.com/japaric/trust/tree/v0.1.2
+
+environment:
+  global:
+    RUST_VERSION: nightly
+    CRATE_NAME: cookiebot
+
+  matrix:
+    # MSVC
+    #- TARGET: i686-pc-windows-msvc
+    - TARGET: x86_64-pc-windows-msvc
+
+install:
+  - curl -sSf -o rustup-init.exe https://win.rustup.rs/
+  - rustup-init.exe -y --default-host %TARGET% --default-toolchain %RUST_VERSION%
+  - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
+  - rustc -Vv
+  - cargo -V
+
+# TODO This is the "test phase", tweak it as you see fit
+test_script:
+  # we don't run the "test phase" when doing deploys
+  - if [%APPVEYOR_REPO_TAG%]==[false] (
+    cargo build --target %TARGET% &&
+    cargo build --target %TARGET% --release &&
+    cargo test --target %TARGET% &&
+    cargo test --target %TARGET% --release
+    )
+
+before_deploy:
+  - cargo rustc --target %TARGET% --release --bin cookiebot -- -C lto
+  - ps: ci\before_deploy.ps1
+
+deploy:
+  artifact: /.*\.zip/
+  auth_token:
+    secure: 3C1nrSwxsFA+Xrfl5ADzFr3EfxVox1nueMg2pVCIsryEbleDSX9ScrjVxQVzPJME
+  description: ""
+  on:
+    RUST_VERSION: nightly
+    appveyor_repo_tag: true
+  provider: GitHub
+
+cache:
+  - C:\Users\appveyor\.cargo\registry
+  - target
+
+branches:
+  only:
+    # Release tags
+    - /^v\d+\.\d+\.\d+.*$/
+    - master
+
+# Building is done in the test phase, so we disable Appveyor's build phase.
+build: false
