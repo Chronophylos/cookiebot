@@ -8,7 +8,7 @@ lazy_static! {
     pub static ref BUY_CDR_BAD: Regex = Regex::new(r"\[Shop\] (?P<username>\w+), you can purchase your next cooldown reset in (((?P<h>\d) hrs?, )?(?P<m>\d+) mins?, )?(?P<s>\d+) secs?!").unwrap();
     pub static ref PRESTIGE_GOOD: Regex = Regex::new(r"\[Cookies\] (?P<username>\w+) you reset your rank and are now \[(?P<rank>(P\d: )?\w+)\]!").unwrap();
     pub static ref PRESTIGE_BAD: Regex = Regex::new(r"\[Cookies\] (?P<username>\w+) you are not ranked high enough to Prestige yet! FeelsBadMan You need Leader rank OR 5000\+ cookies!").unwrap();
-    pub static ref GENERIC_ANSWER: Regex = Regex::new(r"\[\w+\] (\[\w+\])? (?P<username>\w+)").unwrap();
+    pub static ref GENERIC_ANSWER: Regex = Regex::new(r"\[(Cookies|Shop)\]( \[(?P<rank>(P\d: )?\w+)\])? (?P<username>\w+)").unwrap();
 }
 
 #[cfg(test)]
@@ -189,6 +189,32 @@ mod test_regex {
     fn prestige_bad() {
         let captures = PRESTIGE_BAD
             .captures("[Cookies] chronophylos you are not ranked high enough to Prestige yet! FeelsBadMan You need Leader rank OR 5000+ cookies!")
+            .expect("regex should match");
+
+        assert_eq!(
+            captures.name("username").unwrap().as_str(),
+            "chronophylos",
+            "wrong username"
+        );
+    }
+
+    #[test]
+    fn generic_answer1() {
+        let captures = GENERIC_ANSWER
+            .captures("[Cookies] chronophylos you are not ranked high enough to Prestige yet! FeelsBadMan You need Leader rank OR 5000+ cookies!")
+            .expect("regex should match");
+
+        assert_eq!(
+            captures.name("username").unwrap().as_str(),
+            "chronophylos",
+            "wrong username"
+        );
+    }
+
+    #[test]
+    fn generic_answer2() {
+        let captures = GENERIC_ANSWER
+            .captures("[Cookies] [P1: default] chronophylos you have already claimed a cookie and have 65 of them! 🍪 Please wait in 2 hour intervals!")
             .expect("regex should match");
 
         assert_eq!(

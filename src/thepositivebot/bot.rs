@@ -1,7 +1,7 @@
 use super::constants::*;
 use crate::{twitch::connect, Timestamp, Toggle};
 use anyhow::{anyhow, bail, Context, Result};
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 use regex::Captures;
 use serde::Deserialize;
 use smol::{future::FutureExt, Timer};
@@ -200,6 +200,7 @@ impl Bot {
         loop {
             if let Privmsg(msg) = self.next_message().await? {
                 if msg.user_id() != Some(POSITIVE_BOT_USER_ID) {
+                    trace!("UserID not matching");
                     continue;
                 }
 
