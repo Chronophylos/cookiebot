@@ -1,15 +1,10 @@
 #![forbid(unsafe_code)]
 
 use anyhow::Result;
-use cookiebot::Config;
-use cookiebot::ThePositiveBotBot;
-use lazy_static::lazy_static;
+use clap::{App, Arg, SubCommand};
+use cookiebot::{Config, ThePositiveBotBot};
 use log::info;
 use twitchchat::{twitch::Capability, UserConfig};
-
-lazy_static! {
-    static ref CONFIG: Config = Config::from_path("cookiebot.ron").unwrap();
-}
 
 /*
 macro_rules! gen_capture_fun {
@@ -74,18 +69,44 @@ fn update() -> Result<()> {
 
 fn main() -> Result<()> {
     env_logger::init();
+
+    let matches = App::new("cookiebot")
+        .arg(
+            Arg::with_name("config")
+                .long("config")
+                .value_name("CONFIG")
+                .help("Set a custom config file")
+                .default_value("cookiebot.ron")
+                .takes_value(true),
+        )
+        /*.arg(
+            Arg::with_name("booster")
+                .long("booster")
+                .help("Farm boosters instead of prestige"),
+        )*/
+        .get_matches();
+
+    let config_path = matches
+        .value_of("config")
+        .expect("user set or default config path");
+    let config = Config::from_path(config_path)?;
+
     update()?;
 
     let user_config = UserConfig::builder()
-        .name(&CONFIG.username)
-        .token(&CONFIG.token)
+        .name(config.username)
+        .token(config.token)
         .capabilities(&[Capability::Tags])
         .build()?;
 
-    smol::block_on(async {
-        ThePositiveBotBot::new(&user_config, &CONFIG.channel)
-            .await?
-            .main_loop()
-            .await
+    smol::block_on({
+        let channel = config.channel.clone();
+
+        async move {
+            ThePositiveBotBot::new(user_config, channel)
+                .await?
+                .main_loop()
+                .await
+        }
     })
 }

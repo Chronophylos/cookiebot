@@ -41,12 +41,12 @@ pub struct Bot {
 }
 
 impl Bot {
-    pub async fn new(user_config: &UserConfig, channel: &str) -> Result<Self> {
-        let runner = connect(&user_config, channel).await?;
+    pub async fn new(user_config: UserConfig, channel: String) -> Result<Self> {
+        let runner = connect(&user_config, &channel).await?;
 
         Ok(Self {
-            user_config: user_config.clone(),
-            channel: channel.to_owned(),
+            user_config,
+            channel,
             runner,
             send_byte: false,
         })
