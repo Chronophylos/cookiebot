@@ -3,7 +3,7 @@
 use anyhow::Result;
 use clap::{App, Arg};
 use cookiebot::{Config, ThePositiveBotBot};
-use log::info;
+use log::{error, info};
 use twitchchat::{twitch::Capability, UserConfig};
 
 /*
@@ -80,9 +80,9 @@ fn main() -> Result<()> {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("disable-ssl")
-                .long("disable-ssl")
-                .help("Disable SSL"),
+            Arg::with_name("accept-invalid-certs")
+                .long("accept-invalid-certs")
+                .help("(Dangerous) Accept invalid certificates"),
         )
         .get_matches();
 
@@ -91,10 +91,11 @@ fn main() -> Result<()> {
         .expect("user set or default config path");
     let config = Config::from_path(config_path)?;
 
-    // global boosters are disabled
-    let enable_ssl = !matches.is_present("disable-ssl");
+    let accept_invalid_certs = matches.is_present("accept-invalid-certs");
 
-    update()?;
+    if let Err(err) = update() {
+        error!("Could not update binary: {}", err);
+    }
 
     let user_config = UserConfig::builder()
         .name(config.username)
@@ -106,7 +107,7 @@ fn main() -> Result<()> {
         let channel = config.channel.clone();
 
         async move {
-            ThePositiveBotBot::new(user_config, channel, false, enable_ssl)
+            ThePositiveBotBot::new(user_config, channel, false, accept_invalid_certs)
                 .await?
                 .main_loop()
                 .await

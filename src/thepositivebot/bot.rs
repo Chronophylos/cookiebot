@@ -6,7 +6,7 @@ use log::{debug, info, trace, warn};
 use regex::{Captures, Regex};
 use serde::Deserialize;
 use smol::{fs::OpenOptions, future::FutureExt, io::AsyncWriteExt, Timer};
-use std::{borrow::Cow, ops::Deref, time::Duration};
+use std::{borrow::Cow, error::Error, ops::Deref, time::Duration};
 use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
 
 pub fn total_from_captures(captures: Captures) -> Result<u64> {
@@ -19,8 +19,7 @@ pub fn total_from_captures(captures: Captures) -> Result<u64> {
     Ok(total)
 }
 
-const COOLDOWN_API_SSL: &str = "https://api.roaringiron.com/cooldown";
-const COOLDOWN_API_NOSSL: &str = "http://api.roaringiron.com/cooldown";
+const COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
 
 // {
 //     "can_claim": false,
@@ -81,7 +80,7 @@ pub struct Bot {
     runner: AsyncRunner,
     send_byte: bool,
     booster_mode: bool,
-    enable_ssl: bool,
+    accept_invalid_certs: bool,
 }
 
 impl Bot {
@@ -99,7 +98,7 @@ impl Bot {
             runner,
             send_byte: false,
             booster_mode,
-            enable_ssl,
+            accept_invalid_certs: enable_ssl,
         })
     }
 
@@ -181,24 +180,22 @@ impl Bot {
     }
 
     fn get_cookie_cd(&mut self) -> Result<Option<Duration>> {
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::blocking::Client::builder()
+            .danger_accept_invalid_certs(self.accept_invalid_certs)
+            .build()
+            .context("Could not build client")?;
+
         let response: CooldownResponse = client
-            .get(&format!(
-                "{}/{}",
-                if self.enable_ssl {
-                    COOLDOWN_API_SSL
-                } else {
-                    COOLDOWN_API_NOSSL
-                },
-                self.user_config.name
-            ))
+            .get(&format!("{}/{}", COOLDOWN_API, self.user_config.name))
             .header(
                 "User-Agent",
                 concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION")),
             )
             .header("X-Github-Repo", env!("CARGO_PKG_REPOSITORY"))
-            .send()?
-            .json()?;
+            .send()
+            .context("Could not send request to api.roaringiron.com")?
+            .json()
+            .context("Could not deserialize json response")?;
 
         debug!("Got response from api.roaringiron.com: {:?}", response);
 
