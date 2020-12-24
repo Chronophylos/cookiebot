@@ -6,7 +6,7 @@ use log::{debug, info, trace, warn};
 use regex::{Captures, Regex};
 use serde::Deserialize;
 use smol::{fs::OpenOptions, future::FutureExt, io::AsyncWriteExt, Timer};
-use std::{borrow::Cow, error::Error, ops::Deref, time::Duration};
+use std::{borrow::Cow, ops::Deref, time::Duration};
 use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
 
 pub fn total_from_captures(captures: Captures) -> Result<u64> {
