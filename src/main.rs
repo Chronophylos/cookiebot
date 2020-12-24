@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use anyhow::Result;
-use clap::{App, Arg, SubCommand};
+use clap::{App, Arg};
 use cookiebot::{Config, ThePositiveBotBot};
 use log::info;
 use twitchchat::{twitch::Capability, UserConfig};
@@ -79,17 +79,20 @@ fn main() -> Result<()> {
                 .default_value("cookiebot.ron")
                 .takes_value(true),
         )
-        /*.arg(
-            Arg::with_name("booster")
-                .long("booster")
-                .help("Farm boosters instead of prestige"),
-        )*/
+        .arg(
+            Arg::with_name("disable-ssl")
+                .long("disable-ssl")
+                .help("Disable SSL"),
+        )
         .get_matches();
 
     let config_path = matches
         .value_of("config")
         .expect("user set or default config path");
     let config = Config::from_path(config_path)?;
+
+    // global boosters are disabled
+    let enable_ssl = !matches.is_present("disable-ssl");
 
     update()?;
 
@@ -103,7 +106,7 @@ fn main() -> Result<()> {
         let channel = config.channel.clone();
 
         async move {
-            ThePositiveBotBot::new(user_config, channel)
+            ThePositiveBotBot::new(user_config, channel, false, enable_ssl)
                 .await?
                 .main_loop()
                 .await

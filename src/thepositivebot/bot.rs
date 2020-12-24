@@ -1,11 +1,12 @@
 use super::constants::*;
 use crate::{twitch::connect, Timestamp, Toggle};
 use anyhow::{anyhow, bail, Context, Result};
+use chrono::Utc;
 use log::{debug, info, trace, warn};
 use regex::{Captures, Regex};
 use serde::Deserialize;
-use smol::{future::FutureExt, Timer};
-use std::{ops::Deref, time::Duration};
+use smol::{fs::OpenOptions, future::FutureExt, io::AsyncWriteExt, Timer};
+use std::{borrow::Cow, ops::Deref, time::Duration};
 use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
 
 pub fn total_from_captures(captures: Captures) -> Result<u64> {
@@ -17,6 +18,9 @@ pub fn total_from_captures(captures: Captures) -> Result<u64> {
 
     Ok(total)
 }
+
+const COOLDOWN_API_SSL: &str = "https://api.roaringiron.com/cooldown";
+const COOLDOWN_API_NOSSL: &str = "http://api.roaringiron.com/cooldown";
 
 // {
 //     "can_claim": false,
@@ -32,16 +36,61 @@ struct CooldownResponse {
     seconds_left: f32,
 }
 
+#[derive(Debug, Copy, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Rank {
+    Default,
+    Bronze,
+    Silver,
+    Gold,
+    Platinum,
+    Diamond,
+    Masters,
+    GrandMasters,
+    Leader,
+}
+
+/*
+{
+  "id": "25790355",
+  "username": "chronophylos",
+  "twitchID": "54946241",
+  "firstseen": "Sun Aug 02 2020 21:16:28 GMT+0000 (Coordinated Universal Time)",
+  "lastseen": "Thu Nov 12 2020 11:08:12 GMT+0000 (Coordinated Universal Time)",
+  "cookies": 728,
+  "rank": "default",
+  "prestige": 1,
+  "active": "false",
+  "cooldownreset_cooldown": "Thu Nov 12 2020 11:08:02 GMT+0000 (Coordinated Universal Time)",
+  "booster_cooldown": "none",
+  "tip_cooldown": "none"
+}
+*/
+#[derive(Debug, Clone, Deserialize)]
+struct UserResponse<'a> {
+    cookies: u32,
+    rank: Rank,
+    prestige: u32,
+    booster_cooldown: Cow<'a, str>,
+}
+
 #[derive(Debug)]
 pub struct Bot {
     user_config: UserConfig,
     channel: String,
     runner: AsyncRunner,
     send_byte: bool,
+    booster_mode: bool,
+    enable_ssl: bool,
 }
 
 impl Bot {
-    pub async fn new(user_config: UserConfig, channel: String) -> Result<Self> {
+    pub async fn new(
+        user_config: UserConfig,
+        channel: String,
+        booster_mode: bool,
+        enable_ssl: bool,
+    ) -> Result<Self> {
         let runner = connect(&user_config, &channel).await?;
 
         Ok(Self {
@@ -49,6 +98,8 @@ impl Bot {
             channel,
             runner,
             send_byte: false,
+            booster_mode,
+            enable_ssl,
         })
     }
 
@@ -65,24 +116,38 @@ impl Bot {
                     info!("Got {} {}s", amount, cookie);
                 }
 
+                let stat_writer = write_to_stats(amount);
+
                 if amount > 7 {
                     info!("Trying to buy cooldown reduction for 7 cookies");
                     if self.buy_cdr().await? {
                         info!("Cooldown was reset");
+                        stat_writer.await?;
                         continue;
                     }
                 }
 
-                if total >= 5000 {
-                    if self.prestige().await? {
-                        warn!(
-                            "Could not upgrade prestige but cookie count is over 5000 ({})",
-                            total
-                        );
+                if self.booster_mode {
+                    unreachable!("booster are disabled");
+                //if total >= 300 {
+                //    if !self.buy_booster().await? {
+                //        warn!("Could not buy booster")
+                //    }
+                //}
+                } else {
+                    if total >= 5000 {
+                        if !self.prestige().await? {
+                            warn!(
+                                "Could not upgrade prestige but cookie count is over 5000 ({})",
+                                total
+                            );
+                        }
                     }
                 }
 
                 info!("Waiting for cooldown");
+
+                stat_writer.await?;
             } else {
                 info!("Could not claim cookies: Cooldown active");
             }
@@ -100,6 +165,7 @@ impl Bot {
             }
             Some(duration) => {
                 info!("Cooldown active");
+
                 debug!("Terminating twitch connection");
                 self.runner.quit_handle().notify().await;
 
@@ -118,7 +184,12 @@ impl Bot {
         let client = reqwest::blocking::Client::new();
         let response: CooldownResponse = client
             .get(&format!(
-                "https://api.roaringiron.com/cooldown/{}",
+                "{}/{}",
+                if self.enable_ssl {
+                    COOLDOWN_API_SSL
+                } else {
+                    COOLDOWN_API_NOSSL
+                },
                 self.user_config.name
             ))
             .header(
@@ -137,6 +208,34 @@ impl Bot {
             Ok(Some(Duration::from_secs_f32(response.seconds_left)))
         }
     }
+
+    /*
+    fn get_booster_cd(&mut self) -> Result<Option<Duration>> {
+        let client = reqwest::blocking::Client::new();
+        let response: UserResponse = client
+            .get(&format!(
+                "https://api.roaringiron.com/user/{}",
+                self.user_config.name
+            ))
+            .header(
+                "User-Agent",
+                concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION")),
+            )
+            .header("X-Github-Repo", env!("CARGO_PKG_REPOSITORY"))
+            .send()?
+            .json()?;
+
+        debug!("Got response from api.roaringiron.com: {:?}", response);
+
+        if response.can_claim {
+            Ok(None)
+        } else {
+            Ok(Some(Duration::from_secs_f32(response.seconds_left)))
+        }
+
+        todo!()
+    }
+    */
 
     async fn claim_cookies(&mut self) -> Result<Option<(String, i32, u64)>> {
         self.request_captures(
@@ -182,6 +281,11 @@ impl Bot {
     async fn buy_cdr(&mut self) -> Result<bool> {
         self.request("!cdr", &BUY_CDR_GOOD, &BUY_CDR_BAD).await
     }
+
+    //async fn buy_booster(&mut self) -> Result<bool> {
+    //    self.request("!shop purchase globalbooster", &BUY_CDR_GOOD, &BUY_CDR_BAD)
+    //        .await
+    //}
 
     async fn wait_for_answer(&mut self) -> Result<String> {
         use messages::Commands::*;
@@ -344,4 +448,18 @@ impl Bot {
             Err(anyhow!("no regex matched"))
         }
     }
+}
+
+async fn write_to_stats(amount: i32) -> Result<()> {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("stats.csv")
+        .await?;
+
+    let buf = format!("{},{}", Utc::now().to_rfc3339(), amount);
+    file.write_all(buf.as_bytes()).await?;
+    file.flush().await?;
+
+    Ok(())
 }

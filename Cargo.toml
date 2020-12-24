@@ -23,3 +23,4 @@ either = "^1.6"
 reqwest = { version = "^0.10", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 self_update = { version = "^0.20", features = ["archive-tar", "compression-flate2", "rustls"] }
 clap = "2.33.3"
+chrono = "0.4.19"
