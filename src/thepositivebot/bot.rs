@@ -83,6 +83,16 @@ pub struct Bot {
     accept_invalid_certs: bool,
 }
 
+async fn connect_and_retry(user_config: &UserConfig, channel: &str) -> Result<AsyncRunner> {
+    loop {
+        match connect(user_config, channel).await {
+            Ok(runner) => return Ok(runner),
+            Err(twitchchat::RunnerError::UnexpectedEof) => continue,
+            Err(err) => return Err(err).context("Could not connect to twitch"),
+        }
+    }
+}
+
 impl Bot {
     pub async fn new(
         user_config: UserConfig,
@@ -90,7 +100,7 @@ impl Bot {
         booster_mode: bool,
         enable_ssl: bool,
     ) -> Result<Self> {
-        let runner = connect(&user_config, &channel).await?;
+        let runner = connect_and_retry(&user_config, &channel).await?;
 
         Ok(Self {
             user_config,
@@ -103,9 +113,9 @@ impl Bot {
     }
 
     pub async fn main_loop(&mut self) -> Result<()> {
-        self.wait_for_cooldown().await?;
-
         loop {
+            self.wait_for_cooldown().await?;
+
             info!("Claiming cookies");
 
             if let Some((cookie, amount, total)) = self.claim_cookies().await? {
@@ -150,30 +160,25 @@ impl Bot {
             } else {
                 info!("Could not claim cookies: Cooldown active");
             }
-
-            self.wait_for_cooldown().await?;
         }
     }
 
     async fn wait_for_cooldown(&mut self) -> Result<()> {
         info!("Checking cookie cooldown");
 
-        match self.get_cookie_cd()? {
-            None => {
-                info!("Cooldown not active");
-            }
-            Some(duration) => {
-                info!("Cooldown active");
+        if let Some(duration) = self.get_cookie_cd()? {
+            info!("Cooldown active");
 
-                debug!("Terminating twitch connection");
-                self.runner.quit_handle().notify().await;
+            debug!("Terminating twitch connection");
+            self.runner.quit_handle().notify().await;
 
-                info!("Waiting for {}", duration.as_readable());
-                Timer::after(duration).await;
+            info!("Waiting for {}", duration.as_readable());
+            Timer::after(duration).await;
 
-                debug!("Restoring twitch connection");
-                self.reconnect().await?;
-            }
+            debug!("Restoring twitch connection");
+            self.reconnect().await?;
+        } else {
+            info!("Cooldown not activej")
         }
 
         Ok(())
@@ -396,7 +401,7 @@ impl Bot {
     async fn reconnect(&mut self) -> Result<()> {
         info!("Reconnecting");
 
-        self.runner = connect(&self.user_config, &self.channel).await?;
+        self.runner = connect_and_retry(&self.user_config, &self.channel).await?;
 
         Ok(())
     }
@@ -454,7 +459,7 @@ async fn write_to_stats(amount: i32) -> Result<()> {
         .open("stats.csv")
         .await?;
 
-    let buf = format!("{},{}", Utc::now().to_rfc3339(), amount);
+    let buf = format!("{},{}\n", Utc::now().to_rfc3339(), amount);
     file.write_all(buf.as_bytes()).await?;
     file.flush().await?;
 
