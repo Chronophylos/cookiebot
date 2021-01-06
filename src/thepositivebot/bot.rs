@@ -1,11 +1,11 @@
 use super::constants::*;
 use crate::{twitch::connect, Timestamp, Toggle};
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::Utc;
 use log::{debug, info, trace, warn};
 use regex::{Captures, Regex};
+use reqwest::header::USER_AGENT;
 use serde::Deserialize;
-use smol::{fs::OpenOptions, future::FutureExt, io::AsyncWriteExt, Timer};
+use smol::{future::FutureExt, Timer};
 use std::{borrow::Cow, ops::Deref, time::Duration};
 use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
 
@@ -125,13 +125,10 @@ impl Bot {
                     info!("Got {} {}s", amount, cookie);
                 }
 
-                let stat_writer = write_to_stats(amount);
-
                 if amount > 7 {
                     info!("Trying to buy cooldown reduction for 7 cookies");
                     if self.buy_cdr().await? {
                         info!("Cooldown was reset");
-                        stat_writer.await?;
                         continue;
                     }
                 }
@@ -155,8 +152,6 @@ impl Bot {
                 }
 
                 info!("Waiting for cooldown");
-
-                stat_writer.await?;
             } else {
                 info!("Could not claim cookies: Cooldown active");
             }
@@ -193,10 +188,10 @@ impl Bot {
         let response: CooldownResponse = client
             .get(&format!("{}/{}", COOLDOWN_API, self.user_config.name))
             .header(
-                "User-Agent",
+                USER_AGENT,
                 concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION")),
             )
-            .header("X-Github-Repo", env!("CARGO_PKG_REPOSITORY"))
+            .header("X-Client-Repository", env!("CARGO_PKG_REPOSITORY"))
             .send()
             .context("Could not send request to api.roaringiron.com")?
             .json()
@@ -450,18 +445,4 @@ impl Bot {
             Err(anyhow!("no regex matched"))
         }
     }
-}
-
-async fn write_to_stats(amount: i32) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open("stats.csv")
-        .await?;
-
-    let buf = format!("{},{}\n", Utc::now().to_rfc3339(), amount);
-    file.write_all(buf.as_bytes()).await?;
-    file.flush().await?;
-
-    Ok(())
 }
