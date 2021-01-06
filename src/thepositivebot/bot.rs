@@ -178,7 +178,7 @@ impl Bot {
             debug!("Restoring twitch connection");
             self.reconnect().await?;
         } else {
-            info!("Cooldown not activej")
+            info!("Cooldown not active")
         }
 
         Ok(())
