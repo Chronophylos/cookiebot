@@ -28,7 +28,7 @@ struct CooldownResponse {
     seconds_left: f32,
 }
 
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Rank {
     Default,
@@ -127,7 +127,7 @@ enum ParsePresigeRankError {
     ParseRankError(#[source] ParseRankError),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PrestigeRank {
     prestige: u32,
     rank: Rank,
@@ -164,8 +164,8 @@ impl FromStr for PrestigeRank {
 }
 
 /// Result of a claim cookie command
-#[derive(Debug, Clone)]
-enum ClaimCookie {
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ClaimCookieResponse {
     /// Command was successful
     Success {
         rank: PrestigeRank,
@@ -193,7 +193,7 @@ enum ClaimCookieError {
     InvalidInput,
 }
 
-impl FromStr for ClaimCookie {
+impl FromStr for ClaimCookieResponse {
     type Err = ClaimCookieError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -249,6 +249,28 @@ impl FromStr for ClaimCookie {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{ClaimCookieResponse, PrestigeRank, Rank};
+
+    #[test]
+    fn parse_claimcookie() {
+        let input = "[Cookies] [P6: default] chronophylos you have already claimed a cookie and have 4957 of them! 🍪 Please wait in 2 hour intervals! ";
+        let response = input.parse::<ClaimCookieResponse>().unwrap();
+
+        assert_eq!(
+            response,
+            ClaimCookieResponse::Cooldown {
+                rank: PrestigeRank {
+                    prestige: 6,
+                    rank: Rank::Default
+                },
+                total: 4957
+            }
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct Bot {
     user_config: UserConfig,
@@ -293,7 +315,7 @@ impl Bot {
             self.wait_for_cooldown().await?;
 
             match self.claim_cookies().await? {
-                ClaimCookie::Success {
+                ClaimCookieResponse::Success {
                     rank: _,
                     name,
                     amount,
@@ -333,7 +355,7 @@ impl Bot {
 
                     info!("Waiting for cooldown");
                 }
-                ClaimCookie::Cooldown { rank: _, total: _ } => {
+                ClaimCookieResponse::Cooldown { rank: _, total: _ } => {
                     info!("Could not claim cookies: Cooldown active");
                 }
             }
@@ -416,7 +438,7 @@ impl Bot {
     }
     */
 
-    async fn claim_cookies(&mut self) -> Result<ClaimCookie> {
+    async fn claim_cookies(&mut self) -> Result<ClaimCookieResponse> {
         info!("Claiming cookies");
 
         self.communicate("!cookie")
