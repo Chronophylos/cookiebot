@@ -107,7 +107,7 @@ fn main() -> Result<()> {
         let channel = config.channel.clone();
 
         async move {
-            ThePositiveBotBot::new(user_config, channel, false, accept_invalid_certs)
+            ThePositiveBotBot::new(user_config, channel, accept_invalid_certs)
                 .await?
                 .main_loop()
                 .await

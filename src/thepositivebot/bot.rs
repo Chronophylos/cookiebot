@@ -64,7 +64,6 @@ pub struct Bot {
     channel: String,
     runner: AsyncRunner,
     send_byte: bool,
-    booster_mode: bool,
     accept_invalid_certs: bool,
 }
 
@@ -82,12 +81,7 @@ const METRIC_TOTAL_COOKIES: &str = "cookiebot.cookies.total";
 const METRIC_PRESTIGE: &str = "cookiebot.prestige";
 
 impl Bot {
-    pub async fn new(
-        user_config: UserConfig,
-        channel: String,
-        booster_mode: bool,
-        enable_ssl: bool,
-    ) -> Result<Self> {
+    pub async fn new(user_config: UserConfig, channel: String, enable_ssl: bool) -> Result<Self> {
         let runner = connect_and_retry(&user_config, &channel).await?;
         register_gauge!(METRIC_TOTAL_COOKIES, Unit::Count, "total number of cookies");
         register_gauge!(METRIC_PRESTIGE, Unit::Count, "current prestige level");
@@ -97,7 +91,6 @@ impl Bot {
             channel,
             runner,
             send_byte: false,
-            booster_mode,
             accept_invalid_certs: enable_ssl,
         })
     }
@@ -135,21 +128,12 @@ impl Bot {
                         }
                     }
 
-                    if self.booster_mode {
-                        unreachable!("booster are disabled");
-                    //if total >= 300 {
-                    //    if !self.buy_booster().await? {
-                    //        warn!("Could not buy booster")
-                    //    }
-                    //}
-                    } else {
-                        if total >= 5000 {
-                            if !self.prestige().await? {
-                                warn!(
-                                    "Could not upgrade prestige but cookie count is over 5000 ({})",
-                                    total
-                                );
-                            }
+                    if total >= 5000 {
+                        if !self.prestige().await? {
+                            warn!(
+                                "Could not upgrade prestige but cookie count is over 5000 ({})",
+                                total
+                            );
                         }
                     }
 
