@@ -104,6 +104,11 @@ impl Bot {
 
     pub async fn main_loop(&mut self) -> Result<()> {
         loop {
+            // update metrics
+            let response = self.get_user()?;
+            gauge!(METRIC_TOTAL_COOKIES, response.cookies as f64);
+            gauge!(METRIC_PRESTIGE, response.prestige as f64);
+
             self.wait_for_cooldown().await?;
 
             match self.claim_cookies().await? {
@@ -157,11 +162,6 @@ impl Bot {
                     info!("Could not claim cookies: Cooldown active");
                 }
             }
-
-            // update metrics
-            let response = self.get_user()?;
-            gauge!(METRIC_TOTAL_COOKIES, response.cookies as f64);
-            gauge!(METRIC_PRESTIGE, response.prestige as f64);
         }
     }
 
