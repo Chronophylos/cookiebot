@@ -1,4 +1,3 @@
-use super::constants::*;
 use crate::{twitch::connect, Timestamp, Toggle};
 use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, info, trace, warn};
@@ -6,11 +5,17 @@ use regex::Regex;
 use reqwest::header::USER_AGENT;
 use serde::Deserialize;
 use smol::{future::FutureExt, Timer};
-use std::{
-    borrow::Cow, fmt::Display, num::ParseIntError, ops::Deref, str::FromStr, time::Duration,
-};
-use thiserror::Error;
+use std::{borrow::Cow, ops::Deref, time::Duration};
 use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
+
+use super::{
+    claimcookie::ClaimCookieResponse,
+    constants::{
+        BUY_CDR_BAD, BUY_CDR_GOOD, GENERIC_ANSWER, POSITIVE_BOT_USER_ID, PRESTIGE_BAD,
+        PRESTIGE_GOOD,
+    },
+    rank::Rank,
+};
 
 const COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
 
@@ -26,63 +31,6 @@ const COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
 struct CooldownResponse {
     can_claim: bool,
     seconds_left: f32,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Rank {
-    Default,
-    Bronze,
-    Silver,
-    Gold,
-    Platinum,
-    Diamond,
-    Masters,
-    GrandMasters,
-    Leader,
-}
-
-impl Display for Rank {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Self::Default => "default",
-            Self::Bronze => "bronze",
-            Self::Silver => "silver",
-            Self::Gold => "gold",
-            Self::Platinum => "platinum",
-            Self::Diamond => "diamond",
-            Self::Masters => "masters",
-            Self::GrandMasters => "grandmasters",
-            Self::Leader => "leader",
-        };
-
-        write!(f, "{}", s)
-    }
-}
-
-#[derive(Debug, Error)]
-enum ParseRankError {
-    #[error("unknown rank name")]
-    UnkownRankError,
-}
-
-impl FromStr for Rank {
-    type Err = ParseRankError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "default" => Ok(Self::Default),
-            "bronze" => Ok(Self::Bronze),
-            "silver" => Ok(Self::Silver),
-            "gold" => Ok(Self::Gold),
-            "platinum" => Ok(Self::Platinum),
-            "diamond" => Ok(Self::Diamond),
-            "masters" => Ok(Self::Masters),
-            "grandmasters" => Ok(Self::GrandMasters),
-            "leader" => Ok(Self::Leader),
-            _ => Err(Self::Err::UnkownRankError),
-        }
-    }
 }
 
 /*
@@ -107,168 +55,6 @@ struct UserResponse<'a> {
     rank: Rank,
     prestige: u32,
     booster_cooldown: Cow<'a, str>,
-}
-
-#[derive(Debug, Error)]
-enum ParsePresigeRankError {
-    #[error("Missing character P")]
-    MissingP,
-
-    #[error("Missing prestige part before :")]
-    MissingPrestigePart,
-
-    #[error("Missing rank part after :")]
-    MissingRankPart,
-
-    #[error("Could not parse prestige")]
-    ParsePrestigeError(#[source] ParseIntError),
-
-    #[error("Could not parse rank")]
-    ParseRankError(#[source] ParseRankError),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PrestigeRank {
-    prestige: u32,
-    rank: Rank,
-}
-
-impl Display for PrestigeRank {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "P{}: {}", self.prestige, self.rank)
-    }
-}
-
-impl FromStr for PrestigeRank {
-    type Err = ParsePresigeRankError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.strip_prefix("P").ok_or(Self::Err::MissingP)?;
-        let mut split = s.split(':');
-
-        let prestige = split
-            .next()
-            .ok_or(Self::Err::MissingPrestigePart)?
-            .parse()
-            .map_err(|e| Self::Err::ParsePrestigeError(e))?;
-
-        let rank = split
-            .next()
-            .ok_or(Self::Err::MissingRankPart)?
-            .trim()
-            .parse()
-            .map_err(|e| Self::Err::ParseRankError(e))?;
-
-        Ok(PrestigeRank { prestige, rank })
-    }
-}
-
-/// Result of a claim cookie command
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ClaimCookieResponse {
-    /// Command was successful
-    Success {
-        rank: PrestigeRank,
-        name: String,
-        amount: i32,
-        total: u64,
-    },
-
-    /// Command is on cooldown
-    Cooldown { rank: PrestigeRank, total: u64 },
-}
-
-#[derive(Debug, Error)]
-enum ClaimCookieError {
-    #[error("Regex match is missing named capture group {0}")]
-    MissingCaptureGroup(&'static str),
-
-    #[error("Could not parse prestige and rank")]
-    ParsePrestigeRankError(#[from] ParsePresigeRankError),
-
-    #[error("Could not parse int")]
-    ParseIntError(#[from] ParseIntError),
-
-    #[error("Input did not match regex")]
-    InvalidInput,
-}
-
-impl FromStr for ClaimCookieResponse {
-    type Err = ClaimCookieError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(captures) = CLAIM_GOOD.captures(s) {
-            let rank = captures
-                .name("rank")
-                .ok_or(Self::Err::MissingCaptureGroup("rank"))?
-                .as_str()
-                .parse()?;
-
-            let name = captures
-                .name("cookie")
-                .map(|m| m.as_str())
-                .ok_or(Self::Err::MissingCaptureGroup("cookie"))?
-                .to_string();
-
-            let amount = captures
-                .name("amount")
-                .ok_or(Self::Err::MissingCaptureGroup("amount"))?
-                .as_str()
-                .trim_start_matches('±')
-                .parse()?;
-
-            let total = captures
-                .name("total")
-                .ok_or(Self::Err::MissingCaptureGroup("total"))?
-                .as_str()
-                .parse()?;
-
-            Ok(Self::Success {
-                rank,
-                name,
-                amount,
-                total,
-            })
-        } else if let Some(captures) = CLAIM_BAD.captures(s) {
-            let rank = captures
-                .name("rank")
-                .ok_or(Self::Err::MissingCaptureGroup("rank"))?
-                .as_str()
-                .parse()?;
-
-            let total = captures
-                .name("total")
-                .ok_or(Self::Err::MissingCaptureGroup("total"))?
-                .as_str()
-                .parse()?;
-
-            Ok(Self::Cooldown { rank, total })
-        } else {
-            Err(Self::Err::InvalidInput)
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{ClaimCookieResponse, PrestigeRank, Rank};
-
-    #[test]
-    fn parse_claimcookie() {
-        let input = "[Cookies] [P6: default] chronophylos you have already claimed a cookie and have 4957 of them! 🍪 Please wait in 2 hour intervals! ";
-        let response = input.parse::<ClaimCookieResponse>().unwrap();
-
-        assert_eq!(
-            response,
-            ClaimCookieResponse::Cooldown {
-                rank: PrestigeRank {
-                    prestige: 6,
-                    rank: Rank::Default
-                },
-                total: 4957
-            }
-        )
-    }
 }
 
 #[derive(Debug)]
