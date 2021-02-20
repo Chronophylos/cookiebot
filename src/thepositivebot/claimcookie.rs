@@ -26,8 +26,8 @@ pub enum ParsePresigeRankError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrestigeRank {
-    prestige: u32,
-    rank: Rank,
+    pub prestige: u32,
+    pub rank: Rank,
 }
 
 impl Display for PrestigeRank {

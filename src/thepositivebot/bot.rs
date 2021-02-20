@@ -1,6 +1,7 @@
 use crate::{twitch::connect, Timestamp, Toggle};
 use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, info, trace, warn};
+use metrics::{gauge, register_gauge, Unit};
 use regex::Regex;
 use reqwest::header::USER_AGENT;
 use serde::Deserialize;
@@ -77,6 +78,9 @@ async fn connect_and_retry(user_config: &UserConfig, channel: &str) -> Result<As
     }
 }
 
+const METRIC_TOTAL_COOKIES: &str = "cookiebot.cookies.total";
+const METRIC_PRESTIGE: &str = "cookiebot.prestige";
+
 impl Bot {
     pub async fn new(
         user_config: UserConfig,
@@ -85,6 +89,8 @@ impl Bot {
         enable_ssl: bool,
     ) -> Result<Self> {
         let runner = connect_and_retry(&user_config, &channel).await?;
+        register_gauge!(METRIC_TOTAL_COOKIES, Unit::Count, "total number of cookies");
+        register_gauge!(METRIC_PRESTIGE, Unit::Count, "current prestige level");
 
         Ok(Self {
             user_config,
@@ -102,11 +108,14 @@ impl Bot {
 
             match self.claim_cookies().await? {
                 ClaimCookieResponse::Success {
-                    rank: _,
+                    rank,
                     name,
                     amount,
                     total,
                 } => {
+                    gauge!(METRIC_TOTAL_COOKIES, total as f64);
+                    gauge!(METRIC_PRESTIGE, rank.prestige as f64);
+
                     if amount == 0 {
                         info!("No cookies found");
                     } else {
@@ -141,10 +150,18 @@ impl Bot {
 
                     info!("Waiting for cooldown");
                 }
-                ClaimCookieResponse::Cooldown { rank: _, total: _ } => {
+                ClaimCookieResponse::Cooldown { rank, total } => {
+                    gauge!(METRIC_TOTAL_COOKIES, total as f64);
+                    gauge!(METRIC_PRESTIGE, rank.prestige as f64);
+
                     info!("Could not claim cookies: Cooldown active");
                 }
             }
+
+            // update metrics
+            let response = self.get_user()?;
+            gauge!(METRIC_TOTAL_COOKIES, response.cookies as f64);
+            gauge!(METRIC_PRESTIGE, response.prestige as f64);
         }
     }
 
@@ -196,8 +213,7 @@ impl Bot {
         }
     }
 
-    /*
-    fn get_booster_cd(&mut self) -> Result<Option<Duration>> {
+    fn get_user(&mut self) -> Result<UserResponse> {
         let client = reqwest::blocking::Client::new();
         let response: UserResponse = client
             .get(&format!(
@@ -214,15 +230,8 @@ impl Bot {
 
         debug!("Got response from api.roaringiron.com: {:?}", response);
 
-        if response.can_claim {
-            Ok(None)
-        } else {
-            Ok(Some(Duration::from_secs_f32(response.seconds_left)))
-        }
-
-        todo!()
+        Ok(response)
     }
-    */
 
     async fn claim_cookies(&mut self) -> Result<ClaimCookieResponse> {
         info!("Claiming cookies");
