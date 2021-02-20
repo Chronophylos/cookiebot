@@ -20,3 +20,4 @@ self_update = { version = "0.24", features = ["archive-tar", "compression-flate2
 clap = "2.33"
 thiserror = "1.0"
 metrics = "0.14.2"
+metrics-exporter-prometheus = "0.3.0"

@@ -1,9 +1,10 @@
 #![forbid(unsafe_code)]
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{App, Arg};
 use cookiebot::{Config, ThePositiveBotBot};
 use log::{error, info};
+use metrics_exporter_prometheus::PrometheusBuilder;
 use twitchchat::{twitch::Capability, UserConfig};
 
 /*
@@ -69,6 +70,10 @@ fn update() -> Result<()> {
 
 fn main() -> Result<()> {
     env_logger::init();
+
+    PrometheusBuilder::new()
+        .install()
+        .context("could not install Prometheus recorder")?;
 
     let matches = App::new("cookiebot")
         .arg(
