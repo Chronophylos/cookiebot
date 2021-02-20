@@ -5,10 +5,6 @@ authors = ["Chronophylos <nikolai@chronophylos.com>"]
 edition = "2018"
 repository = "Chronphylos/cookiebot"
 
-
-[features]
-default = []
-
 [dependencies]
 lazy_static = "^1.4"
 regex = "^1.4"

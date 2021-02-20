@@ -247,16 +247,7 @@ impl Bot {
 
                 let amount = captures
                     .name("amount")
-                    .map(|m| m.as_str())
-                    .map(|s| {
-                        s.trim_start_matches('±').parse::<i32>().map(|n| {
-                            if s.starts_with('-') {
-                                -n
-                            } else {
-                                n
-                            }
-                        })
-                    })
+                    .map(|m| m.as_str().trim_start_matches('±').parse::<i32>())
                     .context("could not get amount")?
                     .context("could not parse amount")?;
 
