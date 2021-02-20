@@ -2,22 +2,15 @@ use super::constants::*;
 use crate::{twitch::connect, Timestamp, Toggle};
 use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, info, trace, warn};
-use regex::{Captures, Regex};
+use regex::Regex;
 use reqwest::header::USER_AGENT;
 use serde::Deserialize;
 use smol::{future::FutureExt, Timer};
-use std::{borrow::Cow, ops::Deref, time::Duration};
+use std::{
+    borrow::Cow, fmt::Display, num::ParseIntError, ops::Deref, str::FromStr, time::Duration,
+};
+use thiserror::Error;
 use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
-
-pub fn total_from_captures(captures: Captures) -> Result<u64> {
-    let total = captures
-        .name("total")
-        .map(|m| m.as_str().parse::<u64>())
-        .context("could not get total")?
-        .context("could not parse total")?;
-
-    Ok(total)
-}
 
 const COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
 
@@ -49,6 +42,49 @@ enum Rank {
     Leader,
 }
 
+impl Display for Rank {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Default => "default",
+            Self::Bronze => "bronze",
+            Self::Silver => "silver",
+            Self::Gold => "gold",
+            Self::Platinum => "platinum",
+            Self::Diamond => "diamond",
+            Self::Masters => "masters",
+            Self::GrandMasters => "grandmasters",
+            Self::Leader => "leader",
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
+#[derive(Debug, Error)]
+enum ParseRankError {
+    #[error("unknown rank name")]
+    UnkownRankError,
+}
+
+impl FromStr for Rank {
+    type Err = ParseRankError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "default" => Ok(Self::Default),
+            "bronze" => Ok(Self::Bronze),
+            "silver" => Ok(Self::Silver),
+            "gold" => Ok(Self::Gold),
+            "platinum" => Ok(Self::Platinum),
+            "diamond" => Ok(Self::Diamond),
+            "masters" => Ok(Self::Masters),
+            "grandmasters" => Ok(Self::GrandMasters),
+            "leader" => Ok(Self::Leader),
+            _ => Err(Self::Err::UnkownRankError),
+        }
+    }
+}
+
 /*
 {
   "id": "25790355",
@@ -71,6 +107,146 @@ struct UserResponse<'a> {
     rank: Rank,
     prestige: u32,
     booster_cooldown: Cow<'a, str>,
+}
+
+#[derive(Debug, Error)]
+enum ParsePresigeRankError {
+    #[error("Missing character P")]
+    MissingP,
+
+    #[error("Missing prestige part before :")]
+    MissingPrestigePart,
+
+    #[error("Missing rank part after :")]
+    MissingRankPart,
+
+    #[error("Could not parse prestige")]
+    ParsePrestigeError(#[source] ParseIntError),
+
+    #[error("Could not parse rank")]
+    ParseRankError(#[source] ParseRankError),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PrestigeRank {
+    prestige: u32,
+    rank: Rank,
+}
+
+impl Display for PrestigeRank {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "P{}: {}", self.prestige, self.rank)
+    }
+}
+
+impl FromStr for PrestigeRank {
+    type Err = ParsePresigeRankError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.strip_prefix("P").ok_or(Self::Err::MissingP)?;
+        let mut split = s.split(':');
+
+        let prestige = split
+            .next()
+            .ok_or(Self::Err::MissingPrestigePart)?
+            .parse()
+            .map_err(|e| Self::Err::ParsePrestigeError(e))?;
+
+        let rank = split
+            .next()
+            .ok_or(Self::Err::MissingRankPart)?
+            .trim()
+            .parse()
+            .map_err(|e| Self::Err::ParseRankError(e))?;
+
+        Ok(PrestigeRank { prestige, rank })
+    }
+}
+
+/// Result of a claim cookie command
+#[derive(Debug, Clone)]
+enum ClaimCookie {
+    /// Command was successful
+    Success {
+        rank: PrestigeRank,
+        name: String,
+        amount: i32,
+        total: u64,
+    },
+
+    /// Command is on cooldown
+    Cooldown { rank: PrestigeRank, total: u64 },
+}
+
+#[derive(Debug, Error)]
+enum ClaimCookieError {
+    #[error("Regex match is missing named capture group {0}")]
+    MissingCaptureGroup(&'static str),
+
+    #[error("Could not parse prestige and rank")]
+    ParsePrestigeRankError(#[from] ParsePresigeRankError),
+
+    #[error("Could not parse int")]
+    ParseIntError(#[from] ParseIntError),
+
+    #[error("Input did not match regex")]
+    InvalidInput,
+}
+
+impl FromStr for ClaimCookie {
+    type Err = ClaimCookieError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(captures) = CLAIM_GOOD.captures(s) {
+            let rank = captures
+                .name("rank")
+                .ok_or(Self::Err::MissingCaptureGroup("rank"))?
+                .as_str()
+                .parse()?;
+
+            let name = captures
+                .name("cookie")
+                .map(|m| m.as_str())
+                .ok_or(Self::Err::MissingCaptureGroup("cookie"))?
+                .to_string();
+
+            let amount = captures
+                .name("amount")
+                .ok_or(Self::Err::MissingCaptureGroup("amount"))?
+                .as_str()
+                .trim_start_matches('±')
+                .parse()?;
+
+            let total = captures
+                .name("total")
+                .ok_or(Self::Err::MissingCaptureGroup("total"))?
+                .as_str()
+                .parse()?;
+
+            Ok(Self::Success {
+                rank,
+                name,
+                amount,
+                total,
+            })
+        } else if let Some(captures) = CLAIM_BAD.captures(s) {
+            let rank = captures
+                .name("rank")
+                .ok_or(Self::Err::MissingCaptureGroup("rank"))?
+                .as_str()
+                .parse()?;
+
+            let total = captures
+                .name("total")
+                .ok_or(Self::Err::MissingCaptureGroup("total"))?
+                .as_str()
+                .parse()?;
+
+            Ok(Self::Cooldown { rank, total })
+        } else {
+            Err(Self::Err::InvalidInput)
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -116,44 +292,50 @@ impl Bot {
         loop {
             self.wait_for_cooldown().await?;
 
-            info!("Claiming cookies");
-
-            if let Some((cookie, amount, total)) = self.claim_cookies().await? {
-                if amount == 0 {
-                    info!("No cookies found");
-                } else {
-                    info!("Got {} {}s", amount, cookie);
-                }
-
-                if amount > 7 {
-                    info!("Trying to buy cooldown reduction for 7 cookies");
-                    if self.buy_cdr().await? {
-                        info!("Cooldown was reset");
-                        continue;
+            match self.claim_cookies().await? {
+                ClaimCookie::Success {
+                    rank: _,
+                    name,
+                    amount,
+                    total,
+                } => {
+                    if amount == 0 {
+                        info!("No cookies found");
+                    } else {
+                        info!("Got {} {}s", amount, name);
                     }
-                }
 
-                if self.booster_mode {
-                    unreachable!("booster are disabled");
-                //if total >= 300 {
-                //    if !self.buy_booster().await? {
-                //        warn!("Could not buy booster")
-                //    }
-                //}
-                } else {
-                    if total >= 5000 {
-                        if !self.prestige().await? {
-                            warn!(
-                                "Could not upgrade prestige but cookie count is over 5000 ({})",
-                                total
-                            );
+                    if amount > 7 {
+                        info!("Trying to buy cooldown reduction for 7 cookies");
+                        if self.buy_cdr().await? {
+                            info!("Cooldown was reset");
+                            continue;
                         }
                     }
-                }
 
-                info!("Waiting for cooldown");
-            } else {
-                info!("Could not claim cookies: Cooldown active");
+                    if self.booster_mode {
+                        unreachable!("booster are disabled");
+                    //if total >= 300 {
+                    //    if !self.buy_booster().await? {
+                    //        warn!("Could not buy booster")
+                    //    }
+                    //}
+                    } else {
+                        if total >= 5000 {
+                            if !self.prestige().await? {
+                                warn!(
+                                    "Could not upgrade prestige but cookie count is over 5000 ({})",
+                                    total
+                                );
+                            }
+                        }
+                    }
+
+                    info!("Waiting for cooldown");
+                }
+                ClaimCookie::Cooldown { rank: _, total: _ } => {
+                    info!("Could not claim cookies: Cooldown active");
+                }
             }
         }
     }
@@ -234,31 +416,13 @@ impl Bot {
     }
     */
 
-    async fn claim_cookies(&mut self) -> Result<Option<(String, i32, u64)>> {
-        self.request_captures(
-            "!cookie",
-            &CLAIM_GOOD,
-            |captures| {
-                let cookie = captures
-                    .name("cookie")
-                    .map(|m| m.as_str())
-                    .context("could not get cookie name")?
-                    .to_string();
+    async fn claim_cookies(&mut self) -> Result<ClaimCookie> {
+        info!("Claiming cookies");
 
-                let amount = captures
-                    .name("amount")
-                    .map(|m| m.as_str().trim_start_matches('±').parse::<i32>())
-                    .context("could not get amount")?
-                    .context("could not parse amount")?;
-
-                let total = total_from_captures(captures)?;
-
-                Ok(Some((cookie, amount, total)))
-            },
-            &CLAIM_BAD,
-            |_| Ok(None),
-        )
-        .await
+        self.communicate("!cookie")
+            .await?
+            .parse()
+            .context("Could not parse response of cookie command")
     }
 
     async fn prestige(&mut self) -> Result<bool> {
@@ -408,30 +572,6 @@ impl Bot {
             Ok(true)
         } else if re_bad.is_match(&response) {
             Ok(false)
-        } else {
-            Err(anyhow!("no regex matched"))
-        }
-    }
-
-    async fn request_captures<ReGood, FunGood, ReBad, FunBad, Res>(
-        &mut self,
-        message: &str,
-        re_good: &ReGood,
-        f_good: FunGood,
-        re_bad: &ReBad,
-        f_bad: FunBad,
-    ) -> Result<Res>
-    where
-        FunGood: FnOnce(Captures) -> Result<Res>,
-        FunBad: FnOnce(Captures) -> Result<Res>,
-        ReGood: Deref<Target = Regex>,
-        ReBad: Deref<Target = Regex>,
-    {
-        let response = self.communicate(message).await?;
-        if let Some(captures) = re_good.captures(&response) {
-            f_good(captures)
-        } else if let Some(captures) = re_bad.captures(&response) {
-            f_bad(captures)
         } else {
             Err(anyhow!("no regex matched"))
         }

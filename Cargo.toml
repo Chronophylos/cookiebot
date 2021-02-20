@@ -18,3 +18,4 @@ env_logger = "^0.8"
 reqwest = { version = "^0.10", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 self_update = { version = "^0.22", features = ["archive-tar", "compression-flate2", "rustls"] }
 clap = "2.33.3"
+thiserror = "1.0.23"
