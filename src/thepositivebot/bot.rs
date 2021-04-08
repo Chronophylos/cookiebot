@@ -101,7 +101,7 @@ impl Bot {
     pub async fn main_loop(&mut self) -> Result<()> {
         loop {
             // update metrics
-            let response = self.get_user()?;
+            let response = self.get_user().await?;
             gauge!(METRIC_TOTAL_COOKIES, response.cookies as f64);
             gauge!(METRIC_PRESTIGE, response.prestige as f64);
 
@@ -156,7 +156,7 @@ impl Bot {
     async fn wait_for_cooldown(&mut self) -> Result<()> {
         info!("Checking cookie cooldown");
 
-        if let Some(duration) = self.get_cookie_cd()? {
+        if let Some(duration) = self.get_cookie_cd().await? {
             info!("Cooldown active");
 
             debug!("Terminating twitch connection");
@@ -175,8 +175,8 @@ impl Bot {
     }
 
     #[instrument]
-    fn get_cookie_cd(&mut self) -> Result<Option<Duration>> {
-        let client = reqwest::blocking::Client::builder()
+    async fn get_cookie_cd(&mut self) -> Result<Option<Duration>> {
+        let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(self.accept_invalid_certs)
             .build()
             .context("Could not build client")?;
@@ -189,8 +189,10 @@ impl Bot {
             )
             .header("X-Client-Repository", env!("CARGO_PKG_REPOSITORY"))
             .send()
+            .await
             .context("Could not send request to api.roaringiron.com")?
             .json()
+            .await
             .context("Could not deserialize json response")?;
 
         debug!("Got response from api.roaringiron.com: {:?}", response);
@@ -203,8 +205,8 @@ impl Bot {
     }
 
     #[instrument]
-    fn get_user(&mut self) -> Result<UserResponse> {
-        let client = reqwest::blocking::Client::new();
+    async fn get_user(&mut self) -> Result<UserResponse<'_>> {
+        let client = reqwest::Client::new();
         let response: UserResponse = client
             .get(&format!(
                 "https://api.roaringiron.com/user/{}",
@@ -215,8 +217,10 @@ impl Bot {
                 concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION")),
             )
             .header("X-Github-Repo", env!("CARGO_PKG_REPOSITORY"))
-            .send()?
-            .json()?;
+            .send()
+            .await?
+            .json()
+            .await?;
 
         debug!("Got response from api.roaringiron.com: {:?}", response);
 
