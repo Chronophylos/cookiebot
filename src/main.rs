@@ -7,26 +7,6 @@ use log::{error, info};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use twitchchat::{twitch::Capability, UserConfig};
 
-/*
-macro_rules! gen_capture_fun {
-    ($re_left:expr, $re_right:expr, $name:ident, $msg:literal, $left:ty, $right:ty) => {
-        async fn $name(&mut self) -> Result<Either<$left, $right>> {
-            let answer = self.communicate($msg).await?;
-
-
-            if let Some(captures) = $re_left.captures(&answer) {
-                for name in $re_left.capture_names() {
-
-                }
-            }
-
-
-            Err(anyhow!("no regex matched"))
-        }
-    };
-}
-*/
-
 #[cfg(not(debug_assertions))]
 fn update() -> Result<()> {
     use self_update::{backends::github::Update, cargo_crate_version, Status::*};
@@ -68,8 +48,9 @@ fn update() -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
-    env_logger::init();
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
 
     PrometheusBuilder::new()
         .install()
@@ -108,14 +89,8 @@ fn main() -> Result<()> {
         .capabilities(&[Capability::Tags])
         .build()?;
 
-    smol::block_on({
-        let channel = config.channel.clone();
-
-        async move {
-            ThePositiveBotBot::new(user_config, channel, accept_invalid_certs)
-                .await?
-                .main_loop()
-                .await
-        }
-    })
+    ThePositiveBotBot::new(user_config, config.channel, accept_invalid_certs)
+        .await?
+        .main_loop()
+        .await
 }

@@ -11,13 +11,20 @@ regex = "1.4"
 ron = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 anyhow = "1.0"
-twitchchat = { version = "0.14", features = ["async", "smol", "async-tls"] }
-smol = "1.2"
+twitchchat = { version = "0.14", features = [
+    "async",
+    "tokio",
+    "tokio-util",
+    "tokio-rustls",
+    "webpki-roots",
+] }
 log = "0.4"
-env_logger = "0.8"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
-self_update = { version = "0.24", features = ["archive-tar", "compression-flate2", "rustls"] }
+self_update = { version = "0.26", features = ["archive-tar", "compression-flate2", "rustls"] }
 clap = "2.33"
 thiserror = "1.0"
 metrics = "0.14.2"
 metrics-exporter-prometheus = "0.3.0"
+tracing = "0.1.24"
+tracing-subscriber = { version = "0.2.16", default-features = false, features = ["env-filter", "ansi", "fmt"] }
+tokio = { version = "1.2.0", features = ["full"] }

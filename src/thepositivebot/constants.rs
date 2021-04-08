@@ -2,13 +2,23 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 lazy_static! {
-    pub static ref CLAIM_GOOD: Regex = Regex::new(r"\[Cookies\] \[(?P<rank>(P\d: )?\w+)\] (?P<username>\w+) -> (?P<cookie>[^!]+)!+ \((?P<amount>[+-±]\d+)\) \w+ \| (?P<total>\d+) total!").unwrap();
-    pub static ref CLAIM_BAD: Regex = Regex::new(r"\[Cookies\] \[(?P<rank>(P\d: )?\w+)\] (?P<username>\w+) you have already claimed a cookie and have (?P<total>\d+) of them!").unwrap();
+    #[derive(Debug)]
+    pub static ref CLAIM_GOOD: Regex = Regex::new(r"\[Cookies\] \[(?P<rank>(P\d+: )?\w+)\] (?P<username>\w+) -> (?P<cookie>[^!]+)!+ \((?P<amount>[+-±]\d+)\) \w+ \| (?P<total>\d+) total!").unwrap();
+    #[derive(Debug)]
+    pub static ref CLAIM_BAD: Regex = Regex::new(r"\[Cookies\] \[(?P<rank>(P\d+: )?\w+)\] (?P<username>\w+) you have already claimed a cookie and have (?P<total>\d+) of them!").unwrap();
+
+    #[derive(Debug)]
     pub static ref BUY_CDR_GOOD: Regex = Regex::new(r"\[Shop\] (?P<username>\w+), your cooldown has been reset!").unwrap();
+    #[derive(Debug)]
     pub static ref BUY_CDR_BAD: Regex = Regex::new(r"\[Shop\] (?P<username>\w+), you can purchase your next cooldown reset in (((?P<h>\d) hrs?, )?(?P<m>\d+) mins?, )?(?P<s>\d+) secs?!").unwrap();
+
+    #[derive(Debug)]
     pub static ref PRESTIGE_GOOD: Regex = Regex::new(r"\[Cookies\] (?P<username>\w+) you reset your rank and are now \[(?P<rank>(P\d: )?\w+)\]!").unwrap();
+    #[derive(Debug)]
     pub static ref PRESTIGE_BAD: Regex = Regex::new(r"\[Cookies\] (?P<username>\w+) you are not ranked high enough to Prestige yet! FeelsBadMan You need Leader rank OR 5000\+ cookies!").unwrap();
-    pub static ref GENERIC_ANSWER: Regex = Regex::new(r"\[(Cookies|Shop)\]( \[(?P<rank>(P\d: )?\w+)\])? (?P<username>\w+)").unwrap();
+
+    #[derive(Debug)]
+    pub static ref GENERIC_ANSWER: Regex = Regex::new(r"\[(Cookies|Shop)\]( \[(?P<rank>(P\d+: )?\w+)\])? (?P<username>\w+)").unwrap();
 }
 
 #[cfg(test)]
@@ -98,6 +108,24 @@ mod test_regex {
             .expect("regex should match");
 
         assert_eq!(captures.name("rank").unwrap().as_str(), "P1: default");
+        assert_eq!(
+            captures.name("username").unwrap().as_str(),
+            "chronophylos",
+            "wrong username"
+        );
+        assert_eq!(captures.name("cookie").unwrap().as_str(), "Raisin cookie");
+        assert_eq!(captures.name("amount").unwrap().as_str(), "-6");
+        assert_eq!(captures.name("total").unwrap().as_str(), "79");
+    }
+
+    #[test]
+    fn claim_good6() {
+        let captures = CLAIM_GOOD.captures(
+            "[Cookies] [P10: default] chronophylos -> Raisin cookie! (-6) DansGame | 79 total! | 2 hour cooldown... 🍪"
+            )
+            .expect("regex should match");
+
+        assert_eq!(captures.name("rank").unwrap().as_str(), "P10: default");
         assert_eq!(
             captures.name("username").unwrap().as_str(),
             "chronophylos",

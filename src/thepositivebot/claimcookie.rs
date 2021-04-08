@@ -1,5 +1,6 @@
 use std::{fmt::Display, num::ParseIntError, str::FromStr};
 use thiserror::Error;
+use tracing::instrument;
 
 use super::{
     constants::{CLAIM_BAD, CLAIM_GOOD},
@@ -39,6 +40,7 @@ impl Display for PrestigeRank {
 impl FromStr for PrestigeRank {
     type Err = ParsePresigeRankError;
 
+    #[instrument]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.strip_prefix("P").ok_or(Self::Err::MissingP)?;
         let mut split = s.split(':');
@@ -93,6 +95,7 @@ pub enum ParseClaimCookieError {
 impl FromStr for ClaimCookieResponse {
     type Err = ParseClaimCookieError;
 
+    #[instrument]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(captures) = CLAIM_GOOD.captures(s) {
             let rank = captures

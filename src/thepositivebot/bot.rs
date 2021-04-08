@@ -5,8 +5,9 @@ use metrics::{gauge, register_gauge, Unit};
 use regex::Regex;
 use reqwest::header::USER_AGENT;
 use serde::Deserialize;
-use smol::{future::FutureExt, Timer};
-use std::{borrow::Cow, ops::Deref, time::Duration};
+use std::{borrow::Cow, fmt, ops::Deref, time::Duration};
+use tokio::time::{sleep, timeout};
+use tracing::instrument;
 use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
 
 use super::{
@@ -67,6 +68,8 @@ pub struct Bot {
     accept_invalid_certs: bool,
 }
 
+/// Connect to twitch and retry until it worked
+#[instrument]
 async fn connect_and_retry(user_config: &UserConfig, channel: &str) -> Result<AsyncRunner> {
     loop {
         match connect(user_config, channel).await {
@@ -149,6 +152,7 @@ impl Bot {
         }
     }
 
+    #[instrument]
     async fn wait_for_cooldown(&mut self) -> Result<()> {
         info!("Checking cookie cooldown");
 
@@ -159,7 +163,7 @@ impl Bot {
             self.runner.quit_handle().notify().await;
 
             info!("Waiting for {}", duration.as_readable());
-            Timer::after(duration).await;
+            sleep(duration).await;
 
             debug!("Restoring twitch connection");
             self.reconnect().await?;
@@ -170,6 +174,7 @@ impl Bot {
         Ok(())
     }
 
+    #[instrument]
     fn get_cookie_cd(&mut self) -> Result<Option<Duration>> {
         let client = reqwest::blocking::Client::builder()
             .danger_accept_invalid_certs(self.accept_invalid_certs)
@@ -197,6 +202,7 @@ impl Bot {
         }
     }
 
+    #[instrument]
     fn get_user(&mut self) -> Result<UserResponse> {
         let client = reqwest::blocking::Client::new();
         let response: UserResponse = client
@@ -217,6 +223,7 @@ impl Bot {
         Ok(response)
     }
 
+    #[instrument]
     async fn claim_cookies(&mut self) -> Result<ClaimCookieResponse> {
         info!("Claiming cookies");
 
@@ -226,20 +233,18 @@ impl Bot {
             .context("Could not parse response of cookie command")
     }
 
+    #[instrument]
     async fn prestige(&mut self) -> Result<bool> {
         self.request("!prestige", &PRESTIGE_GOOD, &PRESTIGE_BAD)
             .await
     }
 
+    #[instrument]
     async fn buy_cdr(&mut self) -> Result<bool> {
         self.request("!cdr", &BUY_CDR_GOOD, &BUY_CDR_BAD).await
     }
 
-    //async fn buy_booster(&mut self) -> Result<bool> {
-    //    self.request("!shop purchase globalbooster", &BUY_CDR_GOOD, &BUY_CDR_BAD)
-    //        .await
-    //}
-
+    #[instrument]
     async fn wait_for_answer(&mut self) -> Result<String> {
         use messages::Commands::*;
         debug!("Waiting for response");
@@ -267,6 +272,7 @@ impl Bot {
         }
     }
 
+    #[instrument]
     async fn communicate(&mut self, message: &str) -> Result<String> {
         const MAX_RETRIES: u32 = 3;
 
@@ -277,34 +283,24 @@ impl Bot {
 
             self.say(message).await?;
 
-            return match self
-                .wait_for_answer()
-                .or(async {
-                    // time out after 5 seconds of no response
-                    Timer::after(Duration::from_secs(5)).await;
-                    info!("Got no response: time out");
-
-                    Err(anyhow!("Response timed out"))
-                })
-                .await
-            {
-                Err(response) if response.to_string() == "Response timed out" => {
+            return match timeout(Duration::from_secs(5), self.wait_for_answer()).await {
+                Err(_elapsed) => {
                     // exponential back off after time out
-                    let sleep = Duration::from_secs(2u64.pow(retry + 2));
-                    info!("Sleeping for {}", sleep.as_readable());
-                    Timer::after(sleep).await;
+                    let duration = Duration::from_secs(2u64.pow(retry + 2));
+                    info!("Sleeping for {}", duration.as_readable());
+                    sleep(duration).await;
                     continue;
                 }
-                result => result,
+                Ok(result) => result,
             };
         }
-
         Err(anyhow!(
             "Communication failed after {} attempts",
             MAX_RETRIES
         ))
     }
 
+    #[instrument]
     async fn say(&mut self, message: &str) -> Result<()> {
         let mut message = String::from(message);
         if self.send_byte {
@@ -320,6 +316,7 @@ impl Bot {
         Ok(())
     }
 
+    #[instrument]
     async fn next_message(&mut self) -> Result<messages::Commands<'_>> {
         use messages::Commands::*;
 
@@ -357,6 +354,7 @@ impl Bot {
         Ok(())
     }
 
+    #[instrument]
     async fn request<ReGood, ReBad>(
         &mut self,
         message: &str,
@@ -364,8 +362,8 @@ impl Bot {
         re_bad: &ReBad,
     ) -> Result<bool>
     where
-        ReGood: Deref<Target = Regex>,
-        ReBad: Deref<Target = Regex>,
+        ReGood: Deref<Target = Regex> + fmt::Debug,
+        ReBad: Deref<Target = Regex> + fmt::Debug,
     {
         let response = self.communicate(message).await?;
 

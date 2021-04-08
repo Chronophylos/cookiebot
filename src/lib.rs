@@ -1,3 +1,9 @@
+#![warn(
+    missing_debug_implementations,
+    missing_copy_implementations,
+    clippy::missing_const_for_fn
+)]
+
 mod config;
 mod thepositivebot;
 mod timestamp;
