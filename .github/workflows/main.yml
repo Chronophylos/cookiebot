@@ -34,7 +34,7 @@ jobs:
           toolchain: nightly
           args: -Z unstable-options --release --out-dir artifacts --verbose
       - name: Strip binary
-        run: strip -s artifacs/cookiebot
+        run: strip -s artifacts/cookiebot
       
       - name: Release
         uses: softprops/action-gh-release@v1
