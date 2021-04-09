@@ -1,4 +1,3 @@
-use crate::{Timestamp, Toggle};
 use anyhow::{anyhow, Context, Result};
 use metrics::{gauge, register_gauge, Unit};
 use regex::Regex;
@@ -9,8 +8,7 @@ use tokio::{
     sync::mpsc::UnboundedReceiver,
     time::{sleep, timeout},
 };
-use tracing::instrument;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, instrument, trace, warn};
 use twitch_irc::{
     login::StaticLoginCredentials, message::ServerMessage, ClientConfig, TCPTransport,
     TwitchIRCClient,
@@ -25,6 +23,7 @@ use super::{
     error::Error,
     rank::Rank,
 };
+use crate::{Timestamp, Toggle};
 
 const COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
 
@@ -393,7 +392,7 @@ impl Bot {
     ) -> Result<()> {
         let mut message = String::from(message);
         if self.send_byte {
-            message.push('\u{e0000}');
+            message.push('\u{E0000}');
         }
         self.send_byte.toggle();
 

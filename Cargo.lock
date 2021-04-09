@@ -174,7 +174,6 @@ dependencies = [
  "anyhow",
  "clap",
  "lazy_static",
- "log",
  "metrics",
  "metrics-exporter-prometheus",
  "regex",
