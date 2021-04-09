@@ -1,14 +1,20 @@
-use crate::{twitch::connect, Timestamp, Toggle};
-use anyhow::{anyhow, bail, Context, Result};
-use log::{debug, info, trace, warn};
+use crate::{Timestamp, Toggle};
+use anyhow::{anyhow, Context, Result};
 use metrics::{gauge, register_gauge, Unit};
 use regex::Regex;
-use reqwest::header::USER_AGENT;
+use reqwest::header::{HeaderMap, FROM, USER_AGENT};
 use serde::Deserialize;
 use std::{borrow::Cow, fmt, ops::Deref, time::Duration};
-use tokio::time::{sleep, timeout};
+use tokio::{
+    sync::mpsc::UnboundedReceiver,
+    time::{sleep, timeout},
+};
 use tracing::instrument;
-use twitchchat::{commands, messages, AsyncRunner, Status, UserConfig};
+use tracing::{debug, info, trace, warn};
+use twitch_irc::{
+    login::StaticLoginCredentials, message::ServerMessage, ClientConfig, TCPTransport,
+    TwitchIRCClient,
+};
 
 use super::{
     claimcookie::ClaimCookieResponse,
@@ -16,6 +22,7 @@ use super::{
         BUY_CDR_BAD, BUY_CDR_GOOD, GENERIC_ANSWER, POSITIVE_BOT_USER_ID, PRESTIGE_BAD,
         PRESTIGE_GOOD,
     },
+    error::Error,
     rank::Rank,
 };
 
@@ -59,24 +66,23 @@ struct UserResponse<'a> {
     booster_cooldown: Cow<'a, str>,
 }
 
-#[derive(Debug)]
 pub struct Bot {
-    user_config: UserConfig,
+    username: String,
+    token: String,
     channel: String,
-    runner: AsyncRunner,
     send_byte: bool,
     accept_invalid_certs: bool,
 }
 
-/// Connect to twitch and retry until it worked
-#[instrument]
-async fn connect_and_retry(user_config: &UserConfig, channel: &str) -> Result<AsyncRunner> {
-    loop {
-        match connect(user_config, channel).await {
-            Ok(runner) => return Ok(runner),
-            Err(twitchchat::RunnerError::UnexpectedEof) => continue,
-            Err(err) => return Err(err).context("Could not connect to twitch"),
-        }
+impl std::fmt::Debug for Bot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Bot")
+            .field("username", &self.username)
+            .field("token", &"[redacted]")
+            .field("channel", &self.channel)
+            .field("send_byte", &self.send_byte)
+            .field("accept_invalid_certs", &self.accept_invalid_certs)
+            .finish()
     }
 }
 
@@ -84,15 +90,19 @@ const METRIC_TOTAL_COOKIES: &str = "cookiebot.cookies.total";
 const METRIC_PRESTIGE: &str = "cookiebot.prestige";
 
 impl Bot {
-    pub async fn new(user_config: UserConfig, channel: String, enable_ssl: bool) -> Result<Self> {
-        let runner = connect_and_retry(&user_config, &channel).await?;
+    pub async fn new(
+        username: String,
+        token: String,
+        channel: String,
+        enable_ssl: bool,
+    ) -> Result<Self> {
         register_gauge!(METRIC_TOTAL_COOKIES, Unit::Count, "total number of cookies");
         register_gauge!(METRIC_PRESTIGE, Unit::Count, "current prestige level");
 
         Ok(Self {
-            user_config,
+            username,
+            token,
             channel,
-            runner,
             send_byte: false,
             accept_invalid_certs: enable_ssl,
         })
@@ -107,7 +117,16 @@ impl Bot {
 
             self.wait_for_cooldown().await?;
 
-            match self.claim_cookies().await? {
+            let config = ClientConfig::new_simple(StaticLoginCredentials::new(
+                self.username.clone(),
+                Some(self.token.clone()),
+            ));
+            let (mut incoming_messages, client) =
+                TwitchIRCClient::<TCPTransport, StaticLoginCredentials>::new(config);
+
+            client.join(self.channel.clone());
+
+            match self.claim_cookies(&client, &mut incoming_messages).await? {
                 ClaimCookieResponse::Success {
                     rank,
                     name,
@@ -125,14 +144,14 @@ impl Bot {
 
                     if amount > 7 {
                         info!("Trying to buy cooldown reduction for 7 cookies");
-                        if self.buy_cdr().await? {
+                        if self.buy_cdr(&client, &mut incoming_messages).await? {
                             info!("Cooldown was reset");
                             continue;
                         }
                     }
 
                     if total >= 5000 {
-                        if !self.prestige().await? {
+                        if !self.prestige(&client, &mut incoming_messages).await? {
                             warn!(
                                 "Could not upgrade prestige but cookie count is over 5000 ({})",
                                 total
@@ -152,21 +171,15 @@ impl Bot {
         }
     }
 
-    #[instrument]
-    async fn wait_for_cooldown(&mut self) -> Result<()> {
+    #[instrument(skip(self))]
+    async fn wait_for_cooldown(&self) -> Result<()> {
         info!("Checking cookie cooldown");
 
         if let Some(duration) = self.get_cookie_cd().await? {
             info!("Cooldown active");
 
-            debug!("Terminating twitch connection");
-            self.runner.quit_handle().notify().await;
-
             info!("Waiting for {}", duration.as_readable());
             sleep(duration).await;
-
-            debug!("Restoring twitch connection");
-            self.reconnect().await?;
         } else {
             info!("Cooldown not active")
         }
@@ -174,20 +187,46 @@ impl Bot {
         Ok(())
     }
 
-    #[instrument]
-    async fn get_cookie_cd(&mut self) -> Result<Option<Duration>> {
-        let client = reqwest::Client::builder()
+    fn get_client(&self) -> Result<reqwest::Client, Error> {
+        let mut headers = HeaderMap::new();
+        headers.append(
+            USER_AGENT,
+            concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION"))
+                .parse()
+                .map_err(|err| Error::ParsingHeaderValueError(err))?,
+        );
+        headers.append(
+            "X-Github-Repo",
+            env!("CARGO_PKG_REPOSITORY")
+                .parse()
+                .map_err(|err| Error::ParsingHeaderValueError(err))?,
+        );
+        // cant scrape that email :)
+        headers.append(
+            FROM,
+            String::from_utf8_lossy(&[
+                97, 98, 117, 115, 101, 64, 99, 104, 114, 111, 110, 111, 112, 104, 121, 108, 111,
+                115, 46, 99, 111, 109,
+            ])
+            .parse()
+            .map_err(|err| Error::ParsingHeaderValueError(err))?,
+        );
+
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
             .danger_accept_invalid_certs(self.accept_invalid_certs)
+            .default_headers(headers)
+            // .http2_prior_knowledge()
             .build()
-            .context("Could not build client")?;
+            .map_err(|err| Error::BuildReqwestClientError(err))
+    }
+
+    #[instrument(skip(self))]
+    async fn get_cookie_cd(&self) -> Result<Option<Duration>> {
+        let client = self.get_client()?;
 
         let response: CooldownResponse = client
-            .get(&format!("{}/{}", COOLDOWN_API, self.user_config.name))
-            .header(
-                USER_AGENT,
-                concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION")),
-            )
-            .header("X-Client-Repository", env!("CARGO_PKG_REPOSITORY"))
+            .get(&format!("{}/{}", COOLDOWN_API, self.username))
             .send()
             .await
             .context("Could not send request to api.roaringiron.com")?
@@ -204,19 +243,14 @@ impl Bot {
         }
     }
 
-    #[instrument]
-    async fn get_user(&mut self) -> Result<UserResponse<'_>> {
-        let client = reqwest::Client::new();
+    #[instrument(skip(self))]
+    async fn get_user(&self) -> Result<UserResponse<'_>> {
+        let client = self.get_client()?;
         let response: UserResponse = client
             .get(&format!(
                 "https://api.roaringiron.com/user/{}",
-                self.user_config.name
+                self.username
             ))
-            .header(
-                "User-Agent",
-                concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION")),
-            )
-            .header("X-Github-Repo", env!("CARGO_PKG_REPOSITORY"))
             .send()
             .await?
             .json()
@@ -227,57 +261,101 @@ impl Bot {
         Ok(response)
     }
 
-    #[instrument]
-    async fn claim_cookies(&mut self) -> Result<ClaimCookieResponse> {
+    #[instrument(skip(self, client, incoming_messages))]
+    async fn claim_cookies(
+        &mut self,
+        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
+        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
+    ) -> Result<ClaimCookieResponse> {
         info!("Claiming cookies");
 
-        self.communicate("!cookie")
+        self.communicate(client, incoming_messages, "!cookie")
             .await?
             .parse()
             .context("Could not parse response of cookie command")
     }
 
-    #[instrument]
-    async fn prestige(&mut self) -> Result<bool> {
-        self.request("!prestige", &PRESTIGE_GOOD, &PRESTIGE_BAD)
-            .await
+    #[instrument(skip(self, client, incoming_messages))]
+    async fn prestige(
+        &mut self,
+        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
+        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
+    ) -> Result<bool> {
+        self.request(
+            client,
+            incoming_messages,
+            "!prestige",
+            &PRESTIGE_GOOD,
+            &PRESTIGE_BAD,
+        )
+        .await
     }
 
-    #[instrument]
-    async fn buy_cdr(&mut self) -> Result<bool> {
-        self.request("!cdr", &BUY_CDR_GOOD, &BUY_CDR_BAD).await
+    #[instrument(skip(self, client, incoming_messages))]
+    async fn buy_cdr(
+        &mut self,
+        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
+        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
+    ) -> Result<bool> {
+        self.request(
+            client,
+            incoming_messages,
+            "!cdr",
+            &BUY_CDR_GOOD,
+            &BUY_CDR_BAD,
+        )
+        .await
     }
 
-    #[instrument]
-    async fn wait_for_answer(&mut self) -> Result<String> {
-        use messages::Commands::*;
+    #[instrument(skip(self, incoming_messages))]
+    async fn wait_for_answer(
+        &mut self,
+        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
+    ) -> Result<String, Error> {
         debug!("Waiting for response");
 
-        let bot_name = self.user_config.name.clone();
+        let bot_name = self.username.clone();
 
-        loop {
-            if let Privmsg(msg) = self.next_message().await? {
-                if msg.user_id() != Some(POSITIVE_BOT_USER_ID) {
-                    trace!("UserID not matching");
-                    continue;
-                }
+        while let Some(server_message) = incoming_messages.recv().await {
+            debug!("received message: {:?}", &server_message);
 
-                if let Some(captures) = GENERIC_ANSWER.captures(msg.data()) {
-                    let username = captures
-                        .name("username")
-                        .context("could not get username")?
-                        .as_str();
+            match server_message {
+                ServerMessage::Privmsg(msg) => {
+                    if msg.sender.id != POSITIVE_BOT_USER_ID {
+                        trace!("UserID not matching");
+                        continue;
+                    }
 
-                    if username == bot_name {
-                        return Ok(msg.data().to_string());
+                    if let Some(captures) = GENERIC_ANSWER.captures(&msg.message_text) {
+                        let username = captures
+                            .name("username")
+                            .expect("could not get username")
+                            .as_str();
+
+                        if username == bot_name {
+                            return Ok(msg.message_text);
+                        }
                     }
                 }
+                ServerMessage::Notice(msg) => {
+                    if msg.message_text == "Login authentication failed" {
+                        return Err(Error::AuthenticateChatError);
+                    }
+                }
+                _ => {}
             }
         }
+
+        Err(Error::ReceivedNoMessageError)
     }
 
-    #[instrument]
-    async fn communicate(&mut self, message: &str) -> Result<String> {
+    #[instrument(skip(self, client, incoming_messages))]
+    async fn communicate(
+        &mut self,
+        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
+        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
+        message: &str,
+    ) -> Result<String, Error> {
         const MAX_RETRIES: u32 = 3;
 
         for retry in 0..=MAX_RETRIES {
@@ -285,9 +363,14 @@ impl Bot {
                 info!("Retrying communication: Retry {}", retry)
             }
 
-            self.say(message).await?;
+            self.say(client, message).await?;
 
-            return match timeout(Duration::from_secs(5), self.wait_for_answer()).await {
+            return match timeout(
+                Duration::from_secs(5),
+                self.wait_for_answer(incoming_messages),
+            )
+            .await
+            {
                 Err(_elapsed) => {
                     // exponential back off after time out
                     let duration = Duration::from_secs(2u64.pow(retry + 2));
@@ -298,69 +381,32 @@ impl Bot {
                 Ok(result) => result,
             };
         }
-        Err(anyhow!(
-            "Communication failed after {} attempts",
-            MAX_RETRIES
-        ))
+
+        Err(Error::FailedCommunicationError(MAX_RETRIES))
     }
 
-    #[instrument]
-    async fn say(&mut self, message: &str) -> Result<()> {
+    #[instrument(skip(self, client))]
+    async fn say(
+        &mut self,
+        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
+        message: &str,
+    ) -> Result<()> {
         let mut message = String::from(message);
         if self.send_byte {
             message.push('\u{e0000}');
         }
         self.send_byte.toggle();
 
-        self.runner
-            .writer()
-            .encode(commands::privmsg(&self.channel, &message))
-            .await?;
+        client.say(self.channel.clone(), message).await?;
 
         Ok(())
     }
 
-    #[instrument]
-    async fn next_message(&mut self) -> Result<messages::Commands<'_>> {
-        use messages::Commands::*;
-
-        loop {
-            match self.runner.next_message().await? {
-                // this is the parsed message -- across all channels (and notifications from Twitch)
-                Status::Message(msg) => {
-                    if let Reconnect(_) = msg {
-                        self.reconnect().await?;
-                    } else {
-                        return Ok(msg);
-                    }
-                }
-
-                // you signaled a quit
-                Status::Quit => {
-                    warn!("Got unexpected quit from twitchchat");
-                    bail!("Quitting");
-                }
-
-                // the connection closed normally
-                Status::Eof => {
-                    warn!("Got a 'normal' eof");
-                    self.reconnect().await?;
-                }
-            }
-        }
-    }
-
-    async fn reconnect(&mut self) -> Result<()> {
-        info!("Reconnecting");
-
-        self.runner = connect_and_retry(&self.user_config, &self.channel).await?;
-
-        Ok(())
-    }
-
-    #[instrument]
+    #[instrument(skip(self, client, incoming_messages))]
     async fn request<ReGood, ReBad>(
         &mut self,
+        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
+        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
         message: &str,
         re_good: &ReGood,
         re_bad: &ReBad,
@@ -369,7 +415,7 @@ impl Bot {
         ReGood: Deref<Target = Regex> + fmt::Debug,
         ReBad: Deref<Target = Regex> + fmt::Debug,
     {
-        let response = self.communicate(message).await?;
+        let response = self.communicate(client, incoming_messages, message).await?;
 
         if re_good.is_match(&response) {
             Ok(true)

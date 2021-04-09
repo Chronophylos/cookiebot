@@ -5,7 +5,6 @@ use clap::{App, Arg};
 use cookiebot::{Config, ThePositiveBotBot};
 use log::{error, info};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use twitchchat::{twitch::Capability, UserConfig};
 
 #[cfg(not(debug_assertions))]
 fn update() -> Result<()> {
@@ -83,14 +82,13 @@ async fn main() -> Result<()> {
         error!("Could not update binary: {}", err);
     }
 
-    let user_config = UserConfig::builder()
-        .name(config.username)
-        .token(config.token)
-        .capabilities(&[Capability::Tags])
-        .build()?;
-
-    ThePositiveBotBot::new(user_config, config.channel, accept_invalid_certs)
-        .await?
-        .main_loop()
-        .await
+    ThePositiveBotBot::new(
+        config.username,
+        config.token,
+        config.channel,
+        accept_invalid_certs,
+    )
+    .await?
+    .main_loop()
+    .await
 }
