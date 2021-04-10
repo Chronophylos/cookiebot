@@ -1,6 +1,6 @@
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("Could not authenticate with the chat serve")]
+    #[error("Could not authenticate with the chat server")]
     AuthenticateChatError,
 
     #[error("Did not receive a message from the chat server")]
