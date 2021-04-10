@@ -89,25 +89,23 @@ const METRIC_TOTAL_COOKIES: &str = "cookiebot.cookies.total";
 const METRIC_PRESTIGE: &str = "cookiebot.prestige";
 
 impl Bot {
-    pub async fn new(
-        username: String,
-        token: String,
-        channel: String,
-        enable_ssl: bool,
-    ) -> Result<Self> {
+    pub fn new(username: String, token: String, channel: String, enable_ssl: bool) -> Self {
         register_gauge!(METRIC_TOTAL_COOKIES, Unit::Count, "total number of cookies");
         register_gauge!(METRIC_PRESTIGE, Unit::Count, "current prestige level");
 
-        Ok(Self {
+        Self {
             username,
-            token,
+            token: token
+                .strip_prefix("oauth:")
+                .unwrap_or_else(|| token.as_str())
+                .to_owned(),
             channel,
             send_byte: false,
             accept_invalid_certs: enable_ssl,
-        })
+        }
     }
 
-    pub async fn main_loop(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()> {
         loop {
             // update metrics
             let response = self.get_user().await?;

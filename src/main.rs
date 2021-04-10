@@ -42,7 +42,6 @@ async fn main() -> Result<()> {
         config.channel,
         accept_invalid_certs,
     )
-    .await?
-    .main_loop()
+    .run()
     .await
 }
