@@ -252,5 +252,3 @@ mod test_regex {
         );
     }
 }
-
-pub const POSITIVE_BOT_USER_ID: &str = "425363834";

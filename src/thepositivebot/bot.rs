@@ -1,14 +1,10 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use metrics::{gauge, register_gauge, Unit};
 use regex::Regex;
-use reqwest::header::{HeaderMap, FROM, USER_AGENT};
 use serde::Deserialize;
-use std::{borrow::Cow, fmt, ops::Deref, time::Duration};
-use tokio::{
-    sync::mpsc::UnboundedReceiver,
-    time::{sleep, timeout},
-};
-use tracing::{debug, info, instrument, trace, warn};
+use std::{borrow::Cow, fmt, time::Duration};
+use tokio::{sync::mpsc::UnboundedReceiver, time::sleep};
+use tracing::{debug, info, instrument, warn};
 use twitch_irc::{
     login::StaticLoginCredentials, message::ServerMessage, ClientConfig, TCPTransport,
     TwitchIRCClient,
@@ -16,16 +12,21 @@ use twitch_irc::{
 
 use super::{
     claimcookie::ClaimCookieResponse,
-    constants::{
-        BUY_CDR_BAD, BUY_CDR_GOOD, GENERIC_ANSWER, POSITIVE_BOT_USER_ID, PRESTIGE_BAD,
-        PRESTIGE_GOOD,
-    },
-    error::Error,
+    patterns::{BUY_CDR_BAD, BUY_CDR_GOOD, GENERIC_ANSWER, PRESTIGE_BAD, PRESTIGE_GOOD},
     rank::Rank,
 };
-use crate::{Timestamp, Toggle};
+use crate::{bot::Bot, Timestamp};
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Error: {0}")]
+    AnyhowError(#[from] anyhow::Error),
+}
 
 const COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
+const METRIC_TOTAL_COOKIES: &str = "cookiebot.cookies.total";
+const METRIC_PRESTIGE: &str = "cookiebot.prestige";
+pub const POSITIVE_BOT_USER_ID: &str = "425363834";
 
 // {
 //     "can_claim": false,
@@ -65,7 +66,7 @@ struct UserResponse<'a> {
     booster_cooldown: Cow<'a, str>,
 }
 
-pub struct Bot {
+pub struct CookieBot {
     username: String,
     token: String,
     channel: String,
@@ -73,7 +74,7 @@ pub struct Bot {
     accept_invalid_certs: bool,
 }
 
-impl std::fmt::Debug for Bot {
+impl std::fmt::Debug for CookieBot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Bot")
             .field("username", &self.username)
@@ -85,10 +86,7 @@ impl std::fmt::Debug for Bot {
     }
 }
 
-const METRIC_TOTAL_COOKIES: &str = "cookiebot.cookies.total";
-const METRIC_PRESTIGE: &str = "cookiebot.prestige";
-
-impl Bot {
+impl CookieBot {
     pub fn new(username: String, token: String, channel: String, enable_ssl: bool) -> Self {
         register_gauge!(METRIC_TOTAL_COOKIES, Unit::Count, "total number of cookies");
         register_gauge!(METRIC_PRESTIGE, Unit::Count, "current prestige level");
@@ -105,6 +103,7 @@ impl Bot {
         }
     }
 
+    #[instrument]
     pub async fn run(&mut self) -> Result<()> {
         loop {
             // update metrics
@@ -184,40 +183,6 @@ impl Bot {
         Ok(())
     }
 
-    fn get_client(&self) -> Result<reqwest::Client, Error> {
-        let mut headers = HeaderMap::new();
-        headers.append(
-            USER_AGENT,
-            concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION"))
-                .parse()
-                .map_err(|err| Error::ParsingHeaderValueError(err))?,
-        );
-        headers.append(
-            "X-Github-Repo",
-            env!("CARGO_PKG_REPOSITORY")
-                .parse()
-                .map_err(|err| Error::ParsingHeaderValueError(err))?,
-        );
-        // cant scrape that email :)
-        headers.append(
-            FROM,
-            String::from_utf8_lossy(&[
-                97, 98, 117, 115, 101, 64, 99, 104, 114, 111, 110, 111, 112, 104, 121, 108, 111,
-                115, 46, 99, 111, 109,
-            ])
-            .parse()
-            .map_err(|err| Error::ParsingHeaderValueError(err))?,
-        );
-
-        reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .danger_accept_invalid_certs(self.accept_invalid_certs)
-            .default_headers(headers)
-            // .http2_prior_knowledge()
-            .build()
-            .map_err(|err| Error::BuildReqwestClientError(err))
-    }
-
     #[instrument(skip(self))]
     async fn get_cookie_cd(&self) -> Result<Option<Duration>> {
         let client = self.get_client()?;
@@ -278,14 +243,15 @@ impl Bot {
         client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
         incoming_messages: &mut UnboundedReceiver<ServerMessage>,
     ) -> Result<bool> {
-        self.request(
-            client,
-            incoming_messages,
-            "!prestige",
-            &PRESTIGE_GOOD,
-            &PRESTIGE_BAD,
-        )
-        .await
+        Ok(self
+            .request(
+                client,
+                incoming_messages,
+                "!prestige",
+                PRESTIGE_GOOD.clone(),
+                PRESTIGE_BAD.clone(),
+            )
+            .await?)
     }
 
     #[instrument(skip(self, client, incoming_messages))]
@@ -294,132 +260,36 @@ impl Bot {
         client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
         incoming_messages: &mut UnboundedReceiver<ServerMessage>,
     ) -> Result<bool> {
-        self.request(
-            client,
-            incoming_messages,
-            "!cdr",
-            &BUY_CDR_GOOD,
-            &BUY_CDR_BAD,
-        )
-        .await
-    }
-
-    #[instrument(skip(self, incoming_messages))]
-    async fn wait_for_answer(
-        &mut self,
-        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
-    ) -> Result<String, Error> {
-        debug!("Waiting for response");
-
-        let bot_name = self.username.clone();
-
-        while let Some(server_message) = incoming_messages.recv().await {
-            debug!("received message: {:?}", &server_message);
-
-            match server_message {
-                ServerMessage::Privmsg(msg) => {
-                    if msg.sender.id != POSITIVE_BOT_USER_ID {
-                        trace!("UserID not matching");
-                        continue;
-                    }
-
-                    if let Some(captures) = GENERIC_ANSWER.captures(&msg.message_text) {
-                        let username = captures
-                            .name("username")
-                            .expect("could not get username")
-                            .as_str();
-
-                        if username == bot_name {
-                            return Ok(msg.message_text);
-                        }
-                    }
-                }
-                ServerMessage::Notice(msg) => {
-                    if msg.message_text == "Login authentication failed" {
-                        return Err(Error::AuthenticateChatError);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Err(Error::ReceivedNoMessageError)
-    }
-
-    #[instrument(skip(self, client, incoming_messages))]
-    async fn communicate(
-        &mut self,
-        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
-        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
-        message: &str,
-    ) -> Result<String, Error> {
-        const MAX_RETRIES: u32 = 3;
-
-        for retry in 0..=MAX_RETRIES {
-            if retry > 0 {
-                info!("Retrying communication: Retry {}", retry)
-            }
-
-            self.say(client, message).await?;
-
-            return match timeout(
-                Duration::from_secs(5),
-                self.wait_for_answer(incoming_messages),
+        Ok(self
+            .request(
+                client,
+                incoming_messages,
+                "!cdr",
+                BUY_CDR_GOOD.clone(),
+                BUY_CDR_BAD.clone(),
             )
-            .await
-            {
-                Err(_elapsed) => {
-                    // exponential back off after time out
-                    let duration = Duration::from_secs(2u64.pow(retry + 2));
-                    info!("Sleeping for {}", duration.as_readable());
-                    sleep(duration).await;
-                    continue;
-                }
-                Ok(result) => result,
-            };
-        }
+            .await?)
+    }
+}
 
-        Err(Error::FailedCommunicationError(MAX_RETRIES))
+impl Bot for CookieBot {
+    fn accepts_invalid_certs(&self) -> bool {
+        self.accept_invalid_certs
     }
 
-    #[instrument(skip(self, client))]
-    async fn say(
-        &mut self,
-        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
-        message: &str,
-    ) -> Result<()> {
-        let mut message = String::from(message);
-        if self.send_byte {
-            message.push('\u{E0000}');
-        }
-        self.send_byte.toggle();
-
-        client.say(self.channel.clone(), message).await?;
-
-        Ok(())
+    fn get_channel(&self) -> &str {
+        &self.channel
     }
 
-    #[instrument(skip(self, client, incoming_messages))]
-    async fn request<ReGood, ReBad>(
-        &mut self,
-        client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
-        incoming_messages: &mut UnboundedReceiver<ServerMessage>,
-        message: &str,
-        re_good: &ReGood,
-        re_bad: &ReBad,
-    ) -> Result<bool>
-    where
-        ReGood: Deref<Target = Regex> + fmt::Debug,
-        ReBad: Deref<Target = Regex> + fmt::Debug,
-    {
-        let response = self.communicate(client, incoming_messages, message).await?;
+    fn get_bot_id(&self) -> &str {
+        POSITIVE_BOT_USER_ID
+    }
 
-        if re_good.is_match(&response) {
-            Ok(true)
-        } else if re_bad.is_match(&response) {
-            Ok(false)
-        } else {
-            Err(anyhow!("no regex matched"))
-        }
+    fn get_username(&self) -> &str {
+        &self.username
+    }
+
+    fn get_generic_answer(&self) -> &Regex {
+        &*GENERIC_ANSWER
     }
 }

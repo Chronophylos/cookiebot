@@ -1,7 +1,6 @@
 mod bot;
 mod claimcookie;
-mod constants;
-mod error;
+mod patterns;
 mod rank;
 
-pub use bot::Bot as ThePositiveBotBot;
+pub use bot::CookieBot;

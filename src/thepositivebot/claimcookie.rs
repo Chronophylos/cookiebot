@@ -3,7 +3,7 @@ use thiserror::Error;
 use tracing::instrument;
 
 use super::{
-    constants::{CLAIM_BAD, CLAIM_GOOD},
+    patterns::{CLAIM_BAD, CLAIM_GOOD},
     rank::{ParseRankError, Rank},
 };
 
@@ -151,9 +151,8 @@ impl FromStr for ClaimCookieResponse {
 
 #[cfg(test)]
 mod tests {
-    use crate::thepositivebot::rank::Rank;
-
     use super::{ClaimCookieResponse, PrestigeRank};
+    use crate::thepositivebot::rank::Rank;
 
     #[test]
     fn parse_claimcookie() {

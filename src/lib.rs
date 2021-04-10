@@ -4,12 +4,11 @@
     clippy::missing_const_for_fn
 )]
 
+mod bot;
 mod config;
 mod thepositivebot;
 mod timestamp;
-mod toggle;
 
 pub use config::Config;
-pub use thepositivebot::ThePositiveBotBot;
+pub use thepositivebot::CookieBot;
 pub use timestamp::Timestamp;
-pub use toggle::Toggle;

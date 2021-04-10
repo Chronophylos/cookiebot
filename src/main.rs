@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{App, Arg};
-use cookiebot::{Config, ThePositiveBotBot};
+use cookiebot::{Config, CookieBot};
 use metrics_exporter_prometheus::PrometheusBuilder;
 
 #[tokio::main]
@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
 
     let accept_invalid_certs = matches.is_present("accept-invalid-certs");
 
-    ThePositiveBotBot::new(
+    CookieBot::new(
         config.username,
         config.token,
         config.channel,

@@ -172,6 +172,7 @@ name = "cookiebot"
 version = "0.3.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "lazy_static",
  "metrics",
