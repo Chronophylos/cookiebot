@@ -3,11 +3,14 @@ use ron::de::from_reader;
 use serde::Deserialize;
 use std::{fs::File, path::Path};
 
+use crate::SecretToken;
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub username: String,
-    pub token: String,
-    pub channel: String,
+    pub token: SecretToken,
+    pub cookiebot_channel: String,
+    pub egbot_channel: String,
 }
 
 impl Config {

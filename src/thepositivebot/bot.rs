@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use metrics::{gauge, register_gauge, Unit};
 use regex::Regex;
+use secrecy::ExposeSecret;
 use serde::Deserialize;
-use std::{borrow::Cow, fmt, time::Duration};
+use std::{borrow::Cow, time::Duration};
 use tokio::{sync::mpsc::UnboundedReceiver, time::sleep};
 use tracing::{debug, info, instrument, warn};
 use twitch_irc::{
@@ -10,12 +11,13 @@ use twitch_irc::{
     TwitchIRCClient,
 };
 
+use crate::{bot::Bot, SecretToken, Timestamp};
+
 use super::{
     claimcookie::ClaimCookieResponse,
     patterns::{BUY_CDR_BAD, BUY_CDR_GOOD, GENERIC_ANSWER, PRESTIGE_BAD, PRESTIGE_GOOD},
     rank::Rank,
 };
-use crate::{bot::Bot, Timestamp};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -23,10 +25,10 @@ pub enum Error {
     AnyhowError(#[from] anyhow::Error),
 }
 
-const COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
-const METRIC_TOTAL_COOKIES: &str = "cookiebot.cookies.total";
-const METRIC_PRESTIGE: &str = "cookiebot.prestige";
-pub const POSITIVE_BOT_USER_ID: &str = "425363834";
+static COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
+static METRIC_TOTAL_COOKIES: &str = "cookiebot.cookies.total";
+static METRIC_PRESTIGE: &str = "cookiebot.prestige";
+static POSITIVE_BOT_USER_ID: &str = "425363834";
 
 // {
 //     "can_claim": false,
@@ -66,45 +68,34 @@ struct UserResponse<'a> {
     booster_cooldown: Cow<'a, str>,
 }
 
+#[derive(Debug)]
 pub struct CookieBot {
     username: String,
-    token: String,
+    token: SecretToken,
     channel: String,
-    send_byte: bool,
     accept_invalid_certs: bool,
 }
 
-impl std::fmt::Debug for CookieBot {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Bot")
-            .field("username", &self.username)
-            .field("token", &"[redacted]")
-            .field("channel", &self.channel)
-            .field("send_byte", &self.send_byte)
-            .field("accept_invalid_certs", &self.accept_invalid_certs)
-            .finish()
-    }
-}
-
 impl CookieBot {
-    pub fn new(username: String, token: String, channel: String, enable_ssl: bool) -> Self {
+    pub fn new(
+        username: String,
+        token: SecretToken,
+        channel: String,
+        accept_invalid_certs: bool,
+    ) -> Self {
         register_gauge!(METRIC_TOTAL_COOKIES, Unit::Count, "total number of cookies");
         register_gauge!(METRIC_PRESTIGE, Unit::Count, "current prestige level");
 
         Self {
             username,
-            token: token
-                .strip_prefix("oauth:")
-                .unwrap_or_else(|| token.as_str())
-                .to_owned(),
+            token,
             channel,
-            send_byte: false,
-            accept_invalid_certs: enable_ssl,
+            accept_invalid_certs,
         }
     }
 
     #[instrument]
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         loop {
             // update metrics
             let response = self.get_user().await?;
@@ -115,7 +106,7 @@ impl CookieBot {
 
             let config = ClientConfig::new_simple(StaticLoginCredentials::new(
                 self.username.clone(),
-                Some(self.token.clone()),
+                Some(self.token.expose_secret().to_string()),
             ));
             let (mut incoming_messages, client) =
                 TwitchIRCClient::<TCPTransport, StaticLoginCredentials>::new(config);
@@ -225,7 +216,7 @@ impl CookieBot {
 
     #[instrument(skip(self, client, incoming_messages))]
     async fn claim_cookies(
-        &mut self,
+        &self,
         client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
         incoming_messages: &mut UnboundedReceiver<ServerMessage>,
     ) -> Result<ClaimCookieResponse> {
@@ -239,7 +230,7 @@ impl CookieBot {
 
     #[instrument(skip(self, client, incoming_messages))]
     async fn prestige(
-        &mut self,
+        &self,
         client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
         incoming_messages: &mut UnboundedReceiver<ServerMessage>,
     ) -> Result<bool> {
@@ -256,7 +247,7 @@ impl CookieBot {
 
     #[instrument(skip(self, client, incoming_messages))]
     async fn buy_cdr(
-        &mut self,
+        &self,
         client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
         incoming_messages: &mut UnboundedReceiver<ServerMessage>,
     ) -> Result<bool> {

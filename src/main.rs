@@ -2,12 +2,18 @@
 
 use anyhow::{Context, Result};
 use clap::{App, Arg};
-use cookiebot::{Config, CookieBot};
+use cookiebot::{secrettoken::Token, Config, CookieBot, EgBot, SecretToken};
 use metrics_exporter_prometheus::PrometheusBuilder;
+use tokio::join;
+use tracing::instrument;
 
 #[tokio::main]
+#[instrument]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
+
+    let secret_token = SecretToken::new(Token::new("test"));
+    dbg!(ron::to_string(&secret_token).unwrap());
 
     PrometheusBuilder::new()
         .install()
@@ -36,12 +42,18 @@ async fn main() -> Result<()> {
 
     let accept_invalid_certs = matches.is_present("accept-invalid-certs");
 
-    CookieBot::new(
-        config.username,
-        config.token,
-        config.channel,
+    let cookiebot = CookieBot::new(
+        config.username.clone(),
+        config.token.clone(),
+        config.cookiebot_channel,
         accept_invalid_certs,
-    )
-    .run()
-    .await
+    );
+
+    let egbot = EgBot::new(config.username, config.token, config.egbot_channel);
+
+    let (cookiebot_result, egbot_result) = join!(cookiebot.run(), egbot.run());
+    cookiebot_result?;
+    egbot_result?;
+
+    Ok(())
 }

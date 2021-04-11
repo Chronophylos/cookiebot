@@ -96,7 +96,7 @@ pub trait Bot {
         debug!("Waiting for response");
 
         while let Some(server_message) = incoming_messages.recv().await {
-            debug!("received message: {:?}", &server_message);
+            trace!("received message: {:?}", &server_message);
 
             match server_message {
                 ServerMessage::Privmsg(msg) => {
