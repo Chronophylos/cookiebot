@@ -6,11 +6,15 @@ use cookiebot::{Config, CookieBot, EgBot};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::select;
 use tracing::{error, instrument, warn};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 #[instrument]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .pretty()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
     PrometheusBuilder::new()
         .install()
