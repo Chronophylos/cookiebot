@@ -2,18 +2,15 @@
 
 use anyhow::{Context, Result};
 use clap::{App, Arg};
-use cookiebot::{secrettoken::Token, Config, CookieBot, EgBot, SecretToken};
+use cookiebot::{Config, CookieBot, EgBot};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use tokio::join;
-use tracing::instrument;
+use tokio::select;
+use tracing::{error, instrument, warn};
 
 #[tokio::main]
 #[instrument]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-
-    let secret_token = SecretToken::new(Token::new("test"));
-    dbg!(ron::to_string(&secret_token).unwrap());
 
     PrometheusBuilder::new()
         .install()
@@ -51,9 +48,20 @@ async fn main() -> Result<()> {
 
     let egbot = EgBot::new(config.username, config.token, config.egbot_channel);
 
-    let (cookiebot_result, egbot_result) = join!(cookiebot.run(), egbot.run());
-    cookiebot_result?;
-    egbot_result?;
+    select! {
+        result = cookiebot.run() => {
+            if let Err(err) = result {
+                error!("Error running CookieBot: {}", err);
+            }
+            warn!("CookieBot finished running");
+        }
+        result = egbot.run() => {
+            if let Err(err) = result {
+                error!("Error running EgBot: {}", err);
+            }
+            warn!("EgBot finished running");
+        }
+    }
 
     Ok(())
 }
