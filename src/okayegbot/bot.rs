@@ -47,6 +47,8 @@ impl EgBot {
 
     #[instrument]
     pub async fn run(&self) -> Result<(), Error> {
+        info!("Running EgBot");
+
         loop {
             // login to chat server
             let config = ClientConfig::new_simple(StaticLoginCredentials::new(

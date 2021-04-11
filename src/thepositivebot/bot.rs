@@ -96,6 +96,8 @@ impl CookieBot {
 
     #[instrument]
     pub async fn run(&self) -> Result<()> {
+        info!("Running CookieBot");
+
         loop {
             // update metrics
             let response = self.get_user().await?;
