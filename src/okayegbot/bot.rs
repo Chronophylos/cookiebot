@@ -10,7 +10,7 @@ use twitch_irc::{
 
 use crate::{
     bot::{self, Bot},
-    SecretToken,
+    SecretToken, Timestamp,
 };
 
 use super::{
@@ -67,7 +67,7 @@ impl EgBot {
                 } => {
                     info!("Claimed {} egs for a total of {} egs", amount, total);
 
-                    sleep(Duration::from_secs(3600)).await
+                    self.wait_for(Duration::from_secs(3600)).await
                 }
                 ClaimEgs::Failure {
                     username: _,
@@ -79,10 +79,15 @@ impl EgBot {
                     let secs = seconds.unwrap_or(0);
                     let mins = minutes.unwrap_or(0);
 
-                    sleep(Duration::from_secs(secs + mins * 60)).await
+                    self.wait_for(Duration::from_secs(secs + mins * 60)).await
                 }
             }
         }
+    }
+
+    async fn wait_for(&self, duration: Duration) {
+        info!("Waiting for {}", duration.as_readable());
+        sleep(duration).await;
     }
 
     async fn claim_egs(
