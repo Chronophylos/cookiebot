@@ -3,9 +3,10 @@
 use anyhow::{Context, Result};
 use clap::{App, Arg};
 use cookiebot::{Config, CookieBot, EgBot};
+use git_version::git_version;
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::select;
-use tracing::{error, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -15,6 +16,8 @@ async fn main() -> Result<()> {
         .pretty()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
+
+    info!("Starting with version: git: {}", git_version!());
 
     PrometheusBuilder::new()
         .install()

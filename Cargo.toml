@@ -23,3 +23,4 @@ twitch-irc = "2.2.0"
 async-trait = "0.1.48"
 secrecy = { version = "0.7.0", features = ["serde"] }
 zeroize = { version = "1.2.0", features = ["zeroize_derive"] }
+git-version = "0.3.4"

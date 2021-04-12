@@ -166,4 +166,20 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn test_success2() {
+        let text =
+            "@chronophylos | hobos cna\'t affor egs :( nam1Hobo | +0  egs | Total egs: 152 🥚";
+        let claim_egs = text.parse::<ClaimEgs>().unwrap();
+
+        assert_eq!(
+            claim_egs,
+            ClaimEgs::Success {
+                username: "chronophylos".to_string(),
+                amount: 0,
+                total: 152
+            }
+        );
+    }
 }
