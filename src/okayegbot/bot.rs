@@ -92,13 +92,12 @@ impl EgBot {
         sleep(duration).await;
     }
 
+    #[instrument]
     async fn claim_egs(
         &self,
         client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
         incoming_messages: &mut UnboundedReceiver<ServerMessage>,
     ) -> Result<ClaimEgs, Error> {
-        info!("Claiming egs");
-
         self.communicate(client, incoming_messages, "=eg")
             .await
             .map_err(|err| Error::CommunicationError(err))?

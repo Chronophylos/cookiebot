@@ -1,3 +1,5 @@
+use tracing::instrument;
+
 use super::patterns::{CLAIM_BAD, CLAIM_GOOD};
 use std::str::FromStr;
 
@@ -35,6 +37,7 @@ pub enum ClaimEgsParserError {
 }
 
 impl ClaimEgs {
+    #[instrument]
     fn parse_success(s: &str) -> Result<Self, ClaimEgsParserError> {
         let captures = CLAIM_GOOD
             .captures(s)
@@ -67,6 +70,7 @@ impl ClaimEgs {
         })
     }
 
+    #[instrument]
     fn parse_failure(s: &str) -> Result<Self, ClaimEgsParserError> {
         let captures = CLAIM_BAD
             .captures(s)
@@ -115,6 +119,7 @@ impl ClaimEgs {
 impl FromStr for ClaimEgs {
     type Err = ClaimEgsParserError;
 
+    #[instrument]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if CLAIM_GOOD.is_match(s) {
             ClaimEgs::parse_success(s)
@@ -143,6 +148,21 @@ mod tests {
                 minutes: Some(10),
                 seconds: Some(56),
                 total: 60
+            }
+        );
+    }
+
+    #[test]
+    fn test_success() {
+        let text = "@chronophylos | is this a YOLK? nam1Okayeg | +1 egs | Total egs: 92 🥚 ";
+        let claim_egs = text.parse::<ClaimEgs>().unwrap();
+
+        assert_eq!(
+            claim_egs,
+            ClaimEgs::Success {
+                username: "chronophylos".to_string(),
+                amount: 1,
+                total: 92
             }
         );
     }
