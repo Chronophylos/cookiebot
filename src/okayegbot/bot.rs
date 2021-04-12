@@ -92,7 +92,7 @@ impl EgBot {
         sleep(duration).await;
     }
 
-    #[instrument]
+    #[instrument(skip(self, client, incoming_messages))]
     async fn claim_egs(
         &self,
         client: &TwitchIRCClient<TCPTransport, StaticLoginCredentials>,
