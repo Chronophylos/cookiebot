@@ -1,9 +1,10 @@
+use std::{borrow::Cow, time::Duration};
+
 use anyhow::{Context, Result};
 use metrics::{gauge, register_gauge, Unit};
 use regex::Regex;
 use secrecy::ExposeSecret;
 use serde::Deserialize;
-use std::{borrow::Cow, time::Duration};
 use tokio::{sync::mpsc::UnboundedReceiver, time::sleep};
 use tracing::{debug, info, instrument, warn};
 use twitch_irc::{
@@ -11,7 +12,10 @@ use twitch_irc::{
     TwitchIRCClient,
 };
 
-use crate::{bot::Bot, SecretToken, Timestamp};
+use crate::{
+    bot::{self, Bot},
+    SecretToken, Timestamp,
+};
 
 use super::{
     claimcookie::ClaimCookieResponse,
@@ -23,6 +27,9 @@ use super::{
 pub enum Error {
     #[error("Error: {0}")]
     AnyhowError(#[from] anyhow::Error),
+
+    #[error("Could not check chatters: {0}")]
+    CheckChattersError(#[source] bot::Error),
 }
 
 static COOLDOWN_API: &str = "https://api.roaringiron.com/cooldown";
@@ -105,6 +112,19 @@ impl CookieBot {
             gauge!(METRIC_PRESTIGE, response.prestige as f64);
 
             self.wait_for_cooldown().await?;
+
+            if !self
+                .check_chatters("thepositivebot")
+                .await
+                .map_err(|err| Error::CheckChattersError(err))?
+            {
+                warn!(
+                    "ThePositiveBot is not in #{}. Suspending bot for 30 minutes",
+                    self.channel
+                );
+                sleep(Duration::from_secs(60 * 30)).await;
+                continue;
+            }
 
             let config = ClientConfig::new_simple(StaticLoginCredentials::new(
                 self.username.clone(),

@@ -1,8 +1,9 @@
-use crate::timestamp::Timestamp;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use regex::Regex;
 use reqwest::header::{HeaderMap, FROM, USER_AGENT};
-use std::time::Duration;
+use serde::Deserialize;
 use tokio::{
     sync::mpsc::UnboundedReceiver,
     time::{sleep, timeout},
@@ -11,6 +12,8 @@ use tracing::{debug, info, instrument, trace};
 use twitch_irc::{
     login::StaticLoginCredentials, message::ServerMessage, TCPTransport, TwitchIRCClient,
 };
+
+use crate::timestamp::Timestamp;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -34,6 +37,12 @@ pub enum Error {
 
     #[error("No Regex Pattern matched the provided message")]
     NoMatchingRegex,
+
+    #[error("Could not send chatters request: {0}")]
+    SendChattersRequestError(#[source] reqwest::Error),
+
+    #[error("Could deserialize chatter: {0}")]
+    DeserializeChatterError(#[source] reqwest::Error),
 }
 
 #[async_trait]
@@ -191,5 +200,51 @@ pub trait Bot {
         } else {
             Err(Error::NoMatchingRegex)
         }
+    }
+
+    async fn check_chatters(&self, chatter: &str) -> Result<bool, Error> {
+        let response: ChatterResponse = self
+            .get_client()?
+            .get(format!(
+                "https://tmi.twitch.tv/group/user/{}/chatters",
+                self.get_channel()
+            ))
+            .send()
+            .await
+            .map_err(|err| Error::SendChattersRequestError(err))?
+            .json()
+            .await
+            .map_err(|err| Error::DeserializeChatterError(err))?;
+
+        Ok(response.chatters.contains(chatter))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChatterResponse {
+    pub chatter_count: u32,
+    pub chatters: Chatters,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Chatters {
+    pub broadcaster: Vec<String>,
+    pub vips: Vec<String>,
+    pub moderators: Vec<String>,
+    pub staff: Vec<String>,
+    pub admins: Vec<String>,
+    pub global_mods: Vec<String>,
+    pub viewers: Vec<String>,
+}
+
+impl Chatters {
+    pub fn contains(&self, x: &str) -> bool {
+        self.broadcaster.iter().any(|v| v == x)
+            || self.vips.iter().any(|v| v == x)
+            || self.moderators.iter().any(|v| v == x)
+            || self.staff.iter().any(|v| v == x)
+            || self.admins.iter().any(|v| v == x)
+            || self.global_mods.iter().any(|v| v == x)
+            || self.viewers.iter().any(|v| v == x)
     }
 }

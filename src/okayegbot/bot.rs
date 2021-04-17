@@ -1,10 +1,11 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use lazy_static::lazy_static;
 use secrecy::ExposeSecret;
 use serde::Deserialize;
 use tokio::{sync::mpsc::UnboundedReceiver, time::sleep};
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 use twitch_irc::{
     login::StaticLoginCredentials, message::ServerMessage, ClientConfig, TCPTransport,
     TwitchIRCClient,
@@ -22,6 +23,10 @@ use super::{
 
 static OKAYEG_BOT_USER_ID: &str = "75501168";
 
+lazy_static! {
+    static ref CLAIM_EGS_COOLDOWN: chrono::Duration = chrono::Duration::hours(1);
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Could not communicate with target bot: {0}")]
@@ -36,8 +41,11 @@ pub enum Error {
     #[error("Could not send request: {0}")]
     SendRequestError(#[source] reqwest::Error),
 
-    #[error("Could not deserialize response")]
+    #[error("Could not deserialize response: {0}")]
     DeserializeResponseError(#[source] reqwest::Error),
+
+    #[error("Could not check chatters: {0}")]
+    CheckChattersError(#[source] bot::Error),
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,14 +78,32 @@ impl EgBot {
 
         loop {
             match self.get_cooldown().await {
-                Ok(Some(cooldown)) => sleep(cooldown).await,
-                Ok(None) => {}
+                Ok(Some(cooldown)) => {
+                    info!("Eg cooldown: {}", cooldown.as_readable());
+                    sleep(cooldown).await
+                }
+                Ok(None) => {
+                    trace!("cooldown not active")
+                }
                 Err(err) => {
                     error!("Could not get cooldown: {:?}", err);
 
                     sleep(Duration::from_secs(10)).await;
                     continue;
                 }
+            }
+
+            if !self
+                .check_chatters("okayegbot")
+                .await
+                .map_err(|err| Error::CheckChattersError(err))?
+            {
+                warn!(
+                    "OkayegBOT is not in #{}. Suspending bot for 30 minutes",
+                    self.channel
+                );
+                sleep(Duration::from_secs(60 * 30)).await;
+                continue;
             }
 
             // login to chat server
@@ -154,10 +180,20 @@ impl EgBot {
     }
 
     async fn get_cooldown(&self) -> Result<Option<Duration>, Error> {
-        let cooldown = self.get_user_cooldown().await?;
+        let last_used = self.get_user_cooldown().await?;
         let now = Utc::now();
 
-        match cooldown.signed_duration_since(now).to_std() {
+        debug!(
+            "Server reported cooldown as {}, current time is {}",
+            last_used, now
+        );
+
+        match last_used
+            .checked_add_signed(*CLAIM_EGS_COOLDOWN)
+            .expect("Time should not overflow")
+            .signed_duration_since(now)
+            .to_std()
+        {
             Ok(duration) => Ok(Some(duration)),
             Err(_) => Ok(None),
         }
