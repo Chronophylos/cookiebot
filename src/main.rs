@@ -56,17 +56,20 @@ async fn main() -> Result<()> {
     let egbot = EgBot::new(config.username, config.token, config.egbot_channel);
 
     select! {
-        result = cookiebot.run() => {
+        result = cookiebot.run(), if !config.cookiebot_disabled => {
             if let Err(err) = result {
                 error!("Error running CookieBot: {}", err);
             }
             warn!("CookieBot finished running");
         }
-        result = egbot.run() => {
+        result = egbot.run(), if !config.egbot_disabled => {
             if let Err(err) = result {
                 error!("Error running EgBot: {}", err);
             }
             warn!("EgBot finished running");
+        }
+        else => {
+            warn!("no bot is configured to run")
         }
     }
 

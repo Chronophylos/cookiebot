@@ -11,6 +11,8 @@ pub struct Config {
     pub token: SecretToken,
     pub cookiebot_channel: String,
     pub egbot_channel: String,
+    pub cookiebot_disabled: bool,
+    pub egbot_disabled: bool,
 }
 
 impl Config {

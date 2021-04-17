@@ -6,6 +6,7 @@ edition = "2018"
 repository = "Chronphylos/cookiebot"
 
 [dependencies]
+chrono = { version = "0.4.19", features = ["serde"] }
 lazy_static = "1.4"
 regex = "1.4"
 ron = "0.6"

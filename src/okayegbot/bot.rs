@@ -1,8 +1,10 @@
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use secrecy::ExposeSecret;
+use serde::Deserialize;
 use tokio::{sync::mpsc::UnboundedReceiver, time::sleep};
-use tracing::{info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use twitch_irc::{
     login::StaticLoginCredentials, message::ServerMessage, ClientConfig, TCPTransport,
     TwitchIRCClient,
@@ -23,10 +25,27 @@ static OKAYEG_BOT_USER_ID: &str = "75501168";
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Could not communicate with target bot: {0}")]
-    CommunicationError(#[from] bot::Error),
+    CommunicationError(#[source] bot::Error),
 
     #[error("Could not parse claim egs message: {0}")]
     ParseClaimEgsError(#[from] ClaimEgsParserError),
+
+    #[error("Could not get client: {0}")]
+    GetClientError(#[source] bot::Error),
+
+    #[error("Could not send request: {0}")]
+    SendRequestError(#[source] reqwest::Error),
+
+    #[error("Could not deserialize response")]
+    DeserializeResponseError(#[source] reqwest::Error),
+}
+
+#[derive(Debug, Deserialize)]
+struct UserResponse {
+    userid: u64,
+    username: String,
+    egs: i32,
+    cooldown: DateTime<Utc>,
 }
 
 #[derive(Debug)]
@@ -50,6 +69,17 @@ impl EgBot {
         info!("Running EgBot");
 
         loop {
+            match self.get_cooldown().await {
+                Ok(Some(cooldown)) => sleep(cooldown).await,
+                Ok(None) => {}
+                Err(err) => {
+                    error!("Could not get cooldown: {:?}", err);
+
+                    sleep(Duration::from_secs(10)).await;
+                    continue;
+                }
+            }
+
             // login to chat server
             let config = ClientConfig::new_simple(StaticLoginCredentials::new(
                 self.username.clone(),
@@ -103,6 +133,34 @@ impl EgBot {
             .map_err(|err| Error::CommunicationError(err))?
             .parse()
             .map_err(|err| Error::ParseClaimEgsError(err))
+    }
+
+    async fn get_user_cooldown(&self) -> Result<DateTime<Utc>, Error> {
+        let client = self
+            .get_client()
+            .map_err(|err| Error::GetClientError(err))?;
+
+        let response: UserResponse = client
+            .get("https://api.okayeg.com/user")
+            .query(&[("username", &self.username)])
+            .send()
+            .await
+            .map_err(|err| Error::SendRequestError(err))?
+            .json()
+            .await
+            .map_err(|err| Error::DeserializeResponseError(err))?;
+
+        Ok(response.cooldown)
+    }
+
+    async fn get_cooldown(&self) -> Result<Option<Duration>, Error> {
+        let cooldown = self.get_user_cooldown().await?;
+        let now = Utc::now();
+
+        match cooldown.signed_duration_since(now).to_std() {
+            Ok(duration) => Ok(Some(duration)),
+            Err(_) => Ok(None),
+        }
     }
 }
 
