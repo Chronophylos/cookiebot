@@ -1,6 +1,6 @@
 [package]
 name = "cookiebot"
-version = "0.4.4"
+version = "0.4.5"
 authors = ["Chronophylos <nikolai@chronophylos.com>"]
 edition = "2018"
 repository = "Chronphylos/cookiebot"
