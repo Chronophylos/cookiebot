@@ -182,4 +182,20 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn test_success_with_negative_total() {
+        let text = "@teischente | 👧 🍆 🐴 | -30 egs | Total egs: -19 🥚 ";
+
+        let claim_egs = text.parse::<ClaimEgs>().unwrap();
+
+        assert_eq!(
+            claim_egs,
+            ClaimEgs::Success {
+                username: "teischente".to_string(),
+                amount: -30,
+                total: -19
+            }
+        );
+    }
 }

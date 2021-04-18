@@ -2,9 +2,9 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 lazy_static! {
-    // https://regex101.com/r/6gc79V/3
+    // https://regex101.com/r/6gc79V/4
     #[derive(Debug)]
-    pub static ref CLAIM_GOOD: Regex = Regex::new(r#"@(?P<username>\w+) \| [^\|]* \| (?P<amount>[+-]\d+) +egs \| Total egs: (?P<total>\d+) 🥚"#).unwrap();
+    pub static ref CLAIM_GOOD: Regex = Regex::new(r#"@(?P<username>\w+) \| [^\|]* \| (?P<amount>[+-]\d+) +egs \| Total egs: (?P<total>-?\d+) 🥚"#).unwrap();
 
     // https://regex101.com/r/g4FpOL/1/
     #[derive(Debug)]
@@ -87,6 +87,30 @@ mod test {
         assert_eq!(
             captures.name("total").unwrap().as_str(),
             "92",
+            "wrong total eg amount"
+        );
+    }
+
+    #[test]
+    fn clain_good_with_negativ_total() {
+        let text = "@teischente | 👧 🍆 🐴 | -30 egs | Total egs: -19 🥚 ";
+        let captures = CLAIM_GOOD.captures(text).expect("regex should match");
+
+        dbg!(&captures);
+
+        assert_eq!(
+            captures.name("username").unwrap().as_str(),
+            "teischente",
+            "wrong username"
+        );
+        assert_eq!(
+            captures.name("amount").unwrap().as_str(),
+            "-30",
+            "wrong eg changed amount"
+        );
+        assert_eq!(
+            captures.name("total").unwrap().as_str(),
+            "-19",
             "wrong total eg amount"
         );
     }
