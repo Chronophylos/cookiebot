@@ -1,1 +1,8 @@
-(username:"chronophylos",token:("2kjhlsdhf27hlkajhsd2"),cookiebot_channel:"thepositivebot",egbot_channel:"okayegbot",cookiebot_disabled:false,egbot_disabled:false)
+(
+    username: "chronophylos",
+    token: ("2kjhlsdhf27hlkajhsd2"),
+    cookiebot_channel: "thepositivebot",
+    egbot_channel: "okayegbot",
+    cookiebot_disabled: false,
+    egbot_disabled: false
+)
