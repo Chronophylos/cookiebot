@@ -70,13 +70,13 @@ pub trait Bot {
             USER_AGENT,
             concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION"))
                 .parse()
-                .map_err(|err| Error::ParsingHeaderValueError(err))?,
+                .map_err(Error::ParsingHeaderValueError)?,
         );
         headers.append(
             "X-Github-Repo",
             env!("CARGO_PKG_REPOSITORY")
                 .parse()
-                .map_err(|err| Error::ParsingHeaderValueError(err))?,
+                .map_err(Error::ParsingHeaderValueError)?,
         );
         // cant scrape that email :)
         headers.append(
@@ -86,7 +86,7 @@ pub trait Bot {
                 115, 46, 99, 111, 109,
             ])
             .parse()
-            .map_err(|err| Error::ParsingHeaderValueError(err))?,
+            .map_err(Error::ParsingHeaderValueError)?,
         );
 
         reqwest::Client::builder()
@@ -94,7 +94,7 @@ pub trait Bot {
             .danger_accept_invalid_certs(self.accepts_invalid_certs())
             .default_headers(headers)
             .build()
-            .map_err(|err| Error::BuildReqwestClientError(err))
+            .map_err(Error::BuildReqwestClientError)
     }
 
     #[instrument(skip(self, incoming_messages))]
@@ -160,7 +160,7 @@ pub trait Bot {
             client
                 .say(self.get_channel().to_string(), message_to_send)
                 .await
-                .map_err(|err| Error::SendingMessageError(err))?;
+                .map_err(Error::SendingMessageError)?;
 
             return match timeout(
                 Duration::from_secs(5),
@@ -211,10 +211,10 @@ pub trait Bot {
             ))
             .send()
             .await
-            .map_err(|err| Error::SendChattersRequestError(err))?
+            .map_err(Error::SendChattersRequestError)?
             .json()
             .await
-            .map_err(|err| Error::DeserializeChatterError(err))?;
+            .map_err(Error::DeserializeChatterError)?;
 
         Ok(response.chatters.contains(chatter))
     }

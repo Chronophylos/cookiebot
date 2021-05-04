@@ -23,9 +23,9 @@ impl Deref for Token {
     }
 }
 
-impl Into<String> for Token {
-    fn into(self) -> String {
-        self.0
+impl From<Token> for String {
+    fn from(token: Token) -> Self {
+        token.0
     }
 }
 

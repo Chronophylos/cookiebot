@@ -116,7 +116,7 @@ impl CookieBot {
             if !self
                 .check_chatters("thepositivebot")
                 .await
-                .map_err(|err| Error::CheckChattersError(err))?
+                .map_err(Error::CheckChattersError)?
             {
                 warn!(
                     "ThePositiveBot is not in #{}. Suspending bot for 30 minutes",
@@ -159,13 +159,11 @@ impl CookieBot {
                         }
                     }
 
-                    if total >= 5000 {
-                        if !self.prestige(&client, &mut incoming_messages).await? {
-                            warn!(
-                                "Could not upgrade prestige but cookie count is over 5000 ({})",
-                                total
-                            );
-                        }
+                    if total >= 5000 && !self.prestige(&client, &mut incoming_messages).await? {
+                        warn!(
+                            "Could not upgrade prestige but cookie count is over 5000 ({})",
+                            total
+                        );
                     }
 
                     info!("Waiting for cooldown");

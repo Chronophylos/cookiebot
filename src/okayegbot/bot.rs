@@ -99,7 +99,7 @@ impl EgBot {
             if !self
                 .check_chatters("okayegbot")
                 .await
-                .map_err(|err| Error::CheckChattersError(err))?
+                .map_err(Error::CheckChattersError)?
             {
                 warn!(
                     "OkayegBOT is not in #{}. Suspending bot for 30 minutes",
@@ -159,27 +159,25 @@ impl EgBot {
     ) -> Result<ClaimEgs, Error> {
         self.communicate(client, incoming_messages, "=eg")
             .await
-            .map_err(|err| Error::CommunicationError(err))?
+            .map_err(Error::CommunicationError)?
             .parse()
-            .map_err(|err| Error::ParseClaimEgsError(err))
+            .map_err(Error::ParseClaimEgsError)
     }
 
     async fn get_user_cooldown(&self) -> Result<DateTime<Utc>, Error> {
-        let client = self
-            .get_client()
-            .map_err(|err| Error::GetClientError(err))?;
+        let client = self.get_client().map_err(Error::GetClientError)?;
 
         let response: UserResponse = client
             .get("https://api.okayeg.com/user")
             .query(&[("username", &self.username)])
             .send()
             .await
-            .map_err(|err| Error::SendRequestError(err))?
+            .map_err(Error::SendRequestError)?
             .error_for_status()
-            .map_err(|err| Error::BadStatusCodeError(err))?
+            .map_err(Error::BadStatusCodeError)?
             .json()
             .await
-            .map_err(|err| Error::DeserializeResponseError(err))?;
+            .map_err(Error::DeserializeResponseError)?;
 
         Ok(response.cooldown)
     }

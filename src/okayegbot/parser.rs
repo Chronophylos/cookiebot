@@ -54,14 +54,14 @@ impl ClaimEgs {
             .ok_or(ClaimEgsParserError::MissingAmount)?
             .as_str()
             .parse()
-            .map_err(|err| ClaimEgsParserError::ParseIntError(err))?;
+            .map_err(ClaimEgsParserError::ParseIntError)?;
 
         let total = captures
             .name("total")
             .ok_or(ClaimEgsParserError::MissingTotal)?
             .as_str()
             .parse()
-            .map_err(|err| ClaimEgsParserError::ParseIntError(err))?;
+            .map_err(ClaimEgsParserError::ParseIntError)?;
 
         Ok(Self::Success {
             username,
@@ -82,30 +82,30 @@ impl ClaimEgs {
             .as_str()
             .to_string();
 
-        let minutes = match captures.name("minutes") {
-            Some(m) => Some(
+        let minutes = captures
+            .name("minutes")
+            .map(|m| {
                 m.as_str()
                     .parse()
-                    .map_err(|err| ClaimEgsParserError::ParseIntError(err))?,
-            ),
-            None => None,
-        };
+                    .map_err(ClaimEgsParserError::ParseIntError)
+            })
+            .transpose()?;
 
-        let seconds = match captures.name("seconds") {
-            Some(m) => Some(
+        let seconds = captures
+            .name("seconds")
+            .map(|m| {
                 m.as_str()
                     .parse()
-                    .map_err(|err| ClaimEgsParserError::ParseIntError(err))?,
-            ),
-            None => None,
-        };
+                    .map_err(ClaimEgsParserError::ParseIntError)
+            })
+            .transpose()?;
 
         let total = captures
             .name("total")
             .ok_or(ClaimEgsParserError::MissingTotal)?
             .as_str()
             .parse()
-            .map_err(|err| ClaimEgsParserError::ParseIntError(err))?;
+            .map_err(ClaimEgsParserError::ParseIntError)?;
 
         Ok(Self::Failure {
             username,

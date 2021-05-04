@@ -49,14 +49,14 @@ impl FromStr for PrestigeRank {
             .next()
             .ok_or(Self::Err::MissingPrestigePart)?
             .parse()
-            .map_err(|e| Self::Err::ParsePrestigeError(e))?;
+            .map_err(Self::Err::ParsePrestigeError)?;
 
         let rank = split
             .next()
             .ok_or(Self::Err::MissingRankPart)?
             .trim()
             .parse()
-            .map_err(|e| Self::Err::ParseRankError(e))?;
+            .map_err(Self::Err::ParseRankError)?;
 
         Ok(PrestigeRank { prestige, rank })
     }

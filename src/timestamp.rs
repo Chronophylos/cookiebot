@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 pub trait Timestamp {
-    fn as_readable(self) -> String;
+    fn as_readable(&self) -> String;
 }
 
 impl Timestamp for Duration {
-    fn as_readable(self) -> String {
+    fn as_readable(&self) -> String {
         let mut time = Vec::new();
         let mut secs = self.as_secs();
 
