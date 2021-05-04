@@ -46,6 +46,9 @@ pub enum Error {
 
     #[error("Could not check chatters: {0}")]
     CheckChattersError(#[source] bot::Error),
+
+    #[error("Request returned bad status code: {0}")]
+    BadStatusCodeError(#[source] reqwest::Error),
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,6 +175,8 @@ impl EgBot {
             .send()
             .await
             .map_err(|err| Error::SendRequestError(err))?
+            .error_for_status()
+            .map_err(|err| Error::BadStatusCodeError(err))?
             .json()
             .await
             .map_err(|err| Error::DeserializeResponseError(err))?;
