@@ -42,7 +42,7 @@ impl FromStr for PrestigeRank {
 
     #[instrument]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.strip_prefix("P").ok_or(Self::Err::MissingP)?;
+        let s = s.strip_prefix('P').ok_or(Self::Err::MissingP)?;
         let mut split = s.split(':');
 
         let prestige = split
