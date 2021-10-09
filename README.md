@@ -1,6 +1,12 @@
 # Cookiebot [![Github Downloads][total_downloads_badge]][total_downloads_link]
 
-> A twitchbot to farm cookies with RoaringIron's ThePositiveBot and egs with OkayegBOT.
+> A twitchbot to farm bots on twitch.
+
+## Supported Bots
+
+- RoaringIron's ThePositiveBot 
+- OkayegBOT
+- LeavesBot
 
 ## License
 
