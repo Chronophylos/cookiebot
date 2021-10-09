@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{App, Arg};
-use cookiebot::{Config, CookieBot, EgBot};
+use cookiebot::{Config, CookieBot, EgBot, LeafBot};
 use git_version::git_version;
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::select;
@@ -53,7 +53,13 @@ async fn main() -> Result<()> {
         accept_invalid_certs,
     );
 
-    let egbot = EgBot::new(config.username, config.token, config.egbot_channel);
+    let egbot = EgBot::new(
+        config.username.clone(),
+        config.token.clone(),
+        config.egbot_channel,
+    );
+
+    let leafbot = LeafBot::new(config.username, config.token, config.leavesbot.channel);
 
     select! {
         result = cookiebot.run(), if !config.cookiebot_disabled => {
@@ -67,6 +73,12 @@ async fn main() -> Result<()> {
                 error!("Error running EgBot: {}", err);
             }
             warn!("EgBot finished running");
+        }
+        result = leafbot.run(), if !config.leavesbot.disabled => {
+            if let Err(err) = result {
+                error!("Error running LeafBot: {}", err);
+            }
+            warn!("LeafBot finished running");
         }
         else => {
             warn!("no bot is configured to run")

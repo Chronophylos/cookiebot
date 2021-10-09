@@ -6,6 +6,7 @@
 
 mod bot;
 mod config;
+mod leavesbot;
 mod okayegbot;
 mod thepositivebot;
 mod timestamp;
@@ -13,6 +14,7 @@ mod timestamp;
 pub mod secrettoken;
 
 pub use config::Config;
+pub use leavesbot::LeafBot;
 pub use okayegbot::EgBot;
 pub use secrettoken::SecretToken;
 pub use thepositivebot::CookieBot;
