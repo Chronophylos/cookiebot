@@ -18,31 +18,31 @@ use crate::timestamp::Timestamp;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Could not build request client: {0}")]
-    BuildReqwestClientError(#[source] reqwest::Error),
+    BuildReqwestClient(#[source] reqwest::Error),
 
     #[error("Could not parse header value: {0}")]
-    ParsingHeaderValueError(#[source] reqwest::header::InvalidHeaderValue),
+    ParsingHeaderValue(#[source] reqwest::header::InvalidHeaderValue),
 
     #[error("Could not authenticate with the chat server")]
     AuthenticateChatError,
 
     #[error("Did not receive a message from the chat server")]
-    ReceivedNoMessageError,
+    ReceivedNoMessage,
 
     #[error("Could not communicate with chat server after {0} attempts")]
-    FailedCommunicationError(u32),
+    FailedCommunication(u32),
 
     #[error("Could not send message to chat: {0}")]
-    SendingMessageError(#[source] twitch_irc::Error<TCPTransport, StaticLoginCredentials>),
+    SendMessage(#[source] twitch_irc::Error<TCPTransport, StaticLoginCredentials>),
 
     #[error("No Regex Pattern matched the provided message")]
     NoMatchingRegex,
 
     #[error("Could not send chatters request: {0}")]
-    SendChattersRequestError(#[source] reqwest::Error),
+    SendChattersRequest(#[source] reqwest::Error),
 
     #[error("Could deserialize chatter: {0}")]
-    DeserializeChatterError(#[source] reqwest::Error),
+    DeserializeChatters(#[source] reqwest::Error),
 }
 
 #[async_trait]
@@ -70,13 +70,13 @@ pub trait Bot {
             USER_AGENT,
             concat!(env!("CARGO_PKG_NAME"), " / ", env!("CARGO_PKG_VERSION"))
                 .parse()
-                .map_err(Error::ParsingHeaderValueError)?,
+                .map_err(Error::ParsingHeaderValue)?,
         );
         headers.append(
             "X-Github-Repo",
             env!("CARGO_PKG_REPOSITORY")
                 .parse()
-                .map_err(Error::ParsingHeaderValueError)?,
+                .map_err(Error::ParsingHeaderValue)?,
         );
         // cant scrape that email :)
         headers.append(
@@ -86,7 +86,7 @@ pub trait Bot {
                 115, 46, 99, 111, 109,
             ])
             .parse()
-            .map_err(Error::ParsingHeaderValueError)?,
+            .map_err(Error::ParsingHeaderValue)?,
         );
 
         reqwest::Client::builder()
@@ -94,7 +94,7 @@ pub trait Bot {
             .danger_accept_invalid_certs(self.accepts_invalid_certs())
             .default_headers(headers)
             .build()
-            .map_err(Error::BuildReqwestClientError)
+            .map_err(Error::BuildReqwestClient)
     }
 
     #[instrument(skip(self, incoming_messages))]
@@ -134,7 +134,7 @@ pub trait Bot {
             }
         }
 
-        Err(Error::ReceivedNoMessageError)
+        Err(Error::ReceivedNoMessage)
     }
 
     #[instrument(skip(self, client, incoming_messages))]
@@ -160,7 +160,7 @@ pub trait Bot {
             client
                 .say(self.get_channel().to_string(), message_to_send)
                 .await
-                .map_err(Error::SendingMessageError)?;
+                .map_err(Error::SendMessage)?;
 
             return match timeout(
                 Duration::from_secs(5),
@@ -179,7 +179,7 @@ pub trait Bot {
             };
         }
 
-        Err(Error::FailedCommunicationError(MAX_RETRIES))
+        Err(Error::FailedCommunication(MAX_RETRIES))
     }
 
     #[instrument(skip(self, client, incoming_messages))]
@@ -211,10 +211,10 @@ pub trait Bot {
             ))
             .send()
             .await
-            .map_err(Error::SendChattersRequestError)?
+            .map_err(Error::SendChattersRequest)?
             .json()
             .await
-            .map_err(Error::DeserializeChatterError)?;
+            .map_err(Error::DeserializeChatters)?;
 
         Ok(response.chatters.contains(chatter))
     }

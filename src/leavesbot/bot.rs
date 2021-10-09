@@ -35,7 +35,7 @@ lazy_static! {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Could not check chatters: {0}")]
-    CheckChattersError(#[source] bot::Error),
+    CheckChatters(#[source] bot::Error),
 
     #[error("Could not communicate with target bot: {0}")]
     CommunicationError(#[source] bot::Error),
@@ -91,7 +91,7 @@ impl LeafBot {
             if !self
                 .check_chatters(USER_NAME)
                 .await
-                .map_err(Error::CheckChattersError)?
+                .map_err(Error::CheckChatters)?
             {
                 warn!(
                     "LeavesBot is not in #{}. Suspending bot for 30 minutes",

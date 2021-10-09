@@ -30,25 +30,25 @@ lazy_static! {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Could not communicate with target bot: {0}")]
-    CommunicationError(#[source] bot::Error),
+    Communication(#[source] bot::Error),
 
     #[error("Could not parse claim egs message: {0}")]
-    ParseClaimEgsError(#[from] ClaimEgsParserError),
+    ParseClaimEgs(#[from] ClaimEgsParserError),
 
     #[error("Could not get client: {0}")]
-    GetClientError(#[source] bot::Error),
+    GetClient(#[source] bot::Error),
 
     #[error("Could not send request: {0}")]
-    SendRequestError(#[source] reqwest::Error),
+    SendRequest(#[source] reqwest::Error),
 
     #[error("Could not deserialize response: {0}")]
-    DeserializeResponseError(#[source] reqwest::Error),
+    DeserializeResponse(#[source] reqwest::Error),
 
     #[error("Could not check chatters: {0}")]
-    CheckChattersError(#[source] bot::Error),
+    CheckChatters(#[source] bot::Error),
 
     #[error("Request returned bad status code: {0}")]
-    BadStatusCodeError(#[source] reqwest::Error),
+    BadStatusCode(#[source] reqwest::Error),
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,7 +99,7 @@ impl EgBot {
             if !self
                 .check_chatters("okayegbot")
                 .await
-                .map_err(Error::CheckChattersError)?
+                .map_err(Error::CheckChatters)?
             {
                 warn!(
                     "OkayegBOT is not in #{}. Suspending bot for 30 minutes",
@@ -159,25 +159,25 @@ impl EgBot {
     ) -> Result<ClaimEgs, Error> {
         self.communicate(client, incoming_messages, "=eg")
             .await
-            .map_err(Error::CommunicationError)?
+            .map_err(Error::Communication)?
             .parse()
-            .map_err(Error::ParseClaimEgsError)
+            .map_err(Error::ParseClaimEgs)
     }
 
     async fn get_user_cooldown(&self) -> Result<DateTime<Utc>, Error> {
-        let client = self.get_client().map_err(Error::GetClientError)?;
+        let client = self.get_client().map_err(Error::GetClient)?;
 
         let response: UserResponse = client
             .get("https://api.okayeg.com/user")
             .query(&[("username", &self.username)])
             .send()
             .await
-            .map_err(Error::SendRequestError)?
+            .map_err(Error::SendRequest)?
             .error_for_status()
-            .map_err(Error::BadStatusCodeError)?
+            .map_err(Error::BadStatusCode)?
             .json()
             .await
-            .map_err(Error::DeserializeResponseError)?;
+            .map_err(Error::DeserializeResponse)?;
 
         Ok(response.cooldown)
     }
